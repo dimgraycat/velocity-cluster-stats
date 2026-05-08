@@ -22,6 +22,7 @@ English: [README.md](README.md)
 - public node ごとの接続人数表示
 - 全体、指定 node、staff group のユーザー名一覧
 - Velocity の registered server 名を使った backend server 別人数表示
+- 登録済み backend server は接続人数が0人でも表示
 - Velocity 再起動なしで設定を反映する `/vstats reload`
 - Redis 障害時も Velocity のログイン、チャット、backend 移動をブロックしないフェイルセーフ設計
 

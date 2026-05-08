@@ -22,6 +22,7 @@ It is designed for clusters where several Velocity proxies connect players to on
 - Per-Velocity public node player counts
 - Player list for all visible players, a specific node, or the staff group
 - Backend server player counts using Velocity registered server names
+- Registered backend servers are shown even when they currently have 0 players
 - `/vstats reload` for config reload without restarting Velocity
 - Redis failure-safe behavior: Velocity login, chat, and backend movement are not blocked when Redis is unavailable
 

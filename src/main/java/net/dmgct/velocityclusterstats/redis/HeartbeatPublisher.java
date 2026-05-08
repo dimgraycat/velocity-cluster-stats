@@ -2,6 +2,7 @@ package net.dmgct.velocityclusterstats.redis;
 
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
+import com.velocitypowered.api.proxy.server.RegisteredServer;
 import net.dmgct.velocityclusterstats.config.PluginConfig;
 import redis.clients.jedis.Jedis;
 
@@ -42,6 +43,12 @@ public final class HeartbeatPublisher {
         List<String> playerNames = new ArrayList<>();
         Map<String, String> playerServers = new HashMap<>();
         Map<String, Integer> backendCounts = new HashMap<>();
+
+        if (config.backend().enabled()) {
+            for (RegisteredServer server : proxyServer.getAllServers()) {
+                backendCounts.put(server.getServerInfo().getName(), 0);
+            }
+        }
 
         for (Player player : proxyServer.getAllPlayers()) {
             String playerName = player.getUsername();

@@ -47,7 +47,8 @@ heartbeat:
 
 backend:
   # When true, /vstats includes per-backend server counts using Velocity's
-  # registered server names.
+  # registered server names. Registered backend servers are shown even when
+  # they currently have 0 players.
   enabled: true
 
   # Used when a player is connected to Velocity but not yet connected to a
