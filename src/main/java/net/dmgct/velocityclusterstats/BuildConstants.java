@@ -7,7 +7,7 @@ public final class BuildConstants {
     /**
      * Plugin version used for Gradle artifacts and {@code velocity-plugin.json}.
      */
-    public static final String VERSION = "0.1.0";
+    public static final String VERSION = "0.2.0";
 
     private BuildConstants() {
     }
