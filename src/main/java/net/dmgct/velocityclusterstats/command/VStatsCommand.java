@@ -15,7 +15,6 @@ import net.kyori.adventure.text.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -121,7 +120,7 @@ public final class VStatsCommand implements SimpleCommand {
             return;
         }
         if (args.length > 2) {
-            send(source, "Usage: /vstats list [nodeId|staff]");
+            send(source, "Usage: /vstats list [nodeId|public|staff]");
             return;
         }
 
@@ -137,6 +136,8 @@ public final class VStatsCommand implements SimpleCommand {
                 players = hasPermission(source, config.permissions().staff())
                         ? snapshot.allPlayers()
                         : snapshot.publicPlayers();
+            } else if ("public".equalsIgnoreCase(target)) {
+                players = snapshot.publicPlayers();
             } else if ("staff".equalsIgnoreCase(target)) {
                 players = snapshot.staffPlayers();
             } else {
@@ -231,9 +232,8 @@ public final class VStatsCommand implements SimpleCommand {
                     .toList();
         }
         if (args.length == 2 && "list".equalsIgnoreCase(args[0])) {
-            Set<String> suggestions = Set.of("staff");
             String prefix = args[1].toLowerCase(Locale.ROOT);
-            return suggestions.stream()
+            return List.of("public", "staff").stream()
                     .filter(option -> option.startsWith(prefix))
                     .toList();
         }

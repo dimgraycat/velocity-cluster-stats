@@ -35,6 +35,7 @@ It is designed for clusters where several Velocity proxies connect players to on
 | `/vstats staff` | Show staff stats only | `vstats.staff` |
 | `/vstats servers` | Show backend server counts only | `vstats.view` |
 | `/vstats list` | Show player list | `vstats.list` |
+| `/vstats list public` | Show players on public nodes | `vstats.list` |
 | `/vstats list <nodeId>` | Show players on a Velocity node | `vstats.list` |
 | `/vstats list staff` | Show players on staff nodes | `vstats.list` + `vstats.staff` |
 | `/vstats reload` | Reload config and Redis settings | `vstats.reload` |
@@ -49,7 +50,7 @@ This plugin does not depend on LuckPerms directly. It calls Velocity's permissio
 |---|---|
 | `vstats.view` | `/vstats`, `/vstats public`, `/vstats servers` |
 | `vstats.staff` | `/vstats staff`, `/vstats list staff`, staff node player lists |
-| `vstats.list` | `/vstats list`, `/vstats list <nodeId>` |
+| `vstats.list` | `/vstats list`, `/vstats list public`, `/vstats list <nodeId>` |
 | `vstats.reload` | `/vstats reload` |
 
 Grant `vstats.*` to allow all Velocity Cluster Stats commands.
