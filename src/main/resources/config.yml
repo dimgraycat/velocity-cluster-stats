@@ -1,29 +1,67 @@
+# Velocity Cluster Stats configuration.
+#
+# This plugin is installed only on Velocity proxy nodes. Do not install a
+# matching plugin on Fabric backend servers.
+#
+# Redis is used only as a shared stats store. If Redis is unavailable, Velocity
+# login, chat, and backend server movement continue normally; only /vstats
+# output is temporarily unavailable.
+
 redis:
+  # Redis server address shared by all Velocity nodes.
   host: "127.0.0.1"
   port: 6379
+
+  # Leave blank when Redis has no password.
   password: ""
+
+  # Redis database index.
   database: 0
+
+  # Prefix for all keys written by this plugin.
   key-prefix: "vstats"
+
+  # Keep these short so Redis failures do not delay stats tasks for long.
   connection-timeout-millis: 1000
   socket-timeout-millis: 1000
+
+  # Suppresses repeated Redis failure logs while Redis is down.
   failure-log-cooldown-seconds: 60
 
 node:
+  # Must be unique for every Velocity proxy node in the cluster.
+  # Examples: prx01, prx02, prx03, staff
   id: "prx01"
+
+  # Allowed values: public, staff
+  # Use public for normal proxy nodes. Use staff only for staff-dedicated
+  # proxy nodes. Staff nodes are optional; public-only clusters are supported.
   group: "public"
 
 heartbeat:
+  # How often this Velocity node publishes its current player snapshot.
   interval-seconds: 5
+
+  # Redis TTL for this node's snapshot. Keep this greater than interval-seconds.
   ttl-seconds: 15
 
 backend:
+  # When true, /vstats includes per-backend server counts using Velocity's
+  # registered server names.
   enabled: true
+
+  # Used when a player is connected to Velocity but not yet connected to a
+  # backend server, such as during login or transfer.
   unassigned-name: "unassigned"
 
 command:
+  # Primary command name. /vstats remains registered as a fallback if this is
+  # changed in the future.
   primary: "vstats"
 
 permissions:
+  # Permission nodes checked through Velocity's permission API.
+  # Console execution is treated as an administrator operation.
   view: "vstats.view"
   staff: "vstats.staff"
   list: "vstats.list"

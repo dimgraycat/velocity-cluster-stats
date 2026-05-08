@@ -34,6 +34,7 @@ The project targets Java 21 bytecode. In this workspace, Gradle should be run wi
 
 - Prefer small, focused changes.
 - Do not rewrite files in `docs/` casually. If the user changes the specification through an instruction, update `docs/velocity_cluster_stats_design.md` so it stays aligned with the requested behavior.
+- When creating or changing production code, always create or update the corresponding tests in the same change. Every public class should have a matching test class unless there is a documented reason it cannot be unit-tested.
 - Do not revert unrelated user changes.
 - Use ASCII unless the edited file already requires non-ASCII.
 
