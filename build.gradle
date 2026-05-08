@@ -1,0 +1,46 @@
+plugins {
+    id 'java'
+    id 'com.gradleup.shadow' version '8.3.6'
+}
+
+group = 'net.dmgct'
+version = '0.1.0-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+dependencies {
+    compileOnly 'com.velocitypowered:velocity-api:3.5.0-SNAPSHOT'
+    annotationProcessor 'com.velocitypowered:velocity-api:3.5.0-SNAPSHOT'
+
+    implementation 'redis.clients:jedis:5.2.0'
+    implementation 'org.yaml:snakeyaml:2.3'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+}
+
+tasks.named('processResources') {
+    filteringCharset = 'UTF-8'
+}
+
+tasks.named('jar') {
+    archiveClassifier = 'thin'
+}
+
+tasks.named('shadowJar') {
+    archiveClassifier = ''
+    minimize {
+        exclude(dependency('redis.clients:jedis:.*'))
+        exclude(dependency('org.yaml:snakeyaml:.*'))
+    }
+}
+
+tasks.named('build') {
+    dependsOn tasks.named('shadowJar')
+}
