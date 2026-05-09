@@ -11,6 +11,7 @@ import net.dmgct.velocityclusterstats.model.NodeSnapshot;
 import net.dmgct.velocityclusterstats.redis.RedisManager;
 import net.dmgct.velocityclusterstats.redis.StatsRepository;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,7 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * Velocity command implementation for the fixed {@code /vstats} command set.
  */
 public final class VStatsCommand implements SimpleCommand {
-    private static final String REDIS_ERROR = "[stats] Redis connection error.";
+    private static final Component REDIS_ERROR = Component.text("[stats] Redis connection error.", NamedTextColor.RED);
 
     private final VelocityClusterStatsPlugin plugin;
     private final ProxyServer proxyServer;
@@ -77,8 +78,8 @@ public final class VStatsCommand implements SimpleCommand {
         PluginConfig config = configRef.get();
 
         if (args.length == 0) {
-            requireAndRun(source, config.permissions().view(), "You do not have permission to use this command.",
-                    snapshot -> formatter.formatRoot(snapshot));
+            requireAndRun(source, config.permissions().view(), permissionError("You do not have permission to use this command."),
+                    snapshot -> formatter.formatRootComponent(snapshot));
             return;
         }
 
@@ -86,47 +87,48 @@ public final class VStatsCommand implements SimpleCommand {
         switch (subcommand) {
             case "public" -> {
                 if (args.length != 1) {
-                    send(source, "Unknown subcommand. Usage: /vstats [public|staff|servers|list|reload]");
+                    sendError(source, "Unknown subcommand. Usage: /vstats [public|staff|servers|list|reload|help]");
                     return;
                 }
-                requireAndRun(source, config.permissions().view(), "You do not have permission to use this command.",
-                        snapshot -> formatter.formatPublic(snapshot));
+                requireAndRun(source, config.permissions().view(), permissionError("You do not have permission to use this command."),
+                        snapshot -> formatter.formatPublicComponent(snapshot));
             }
             case "staff" -> {
                 if (args.length != 1) {
-                    send(source, "Unknown subcommand. Usage: /vstats [public|staff|servers|list|reload]");
+                    sendError(source, "Unknown subcommand. Usage: /vstats [public|staff|servers|list|reload|help]");
                     return;
                 }
-                requireAndRun(source, config.permissions().staff(), "You do not have permission to view staff stats.",
-                        snapshot -> formatter.formatStaff(snapshot));
+                requireAndRun(source, config.permissions().staff(), permissionError("You do not have permission to view staff stats."),
+                        snapshot -> formatter.formatStaffComponent(snapshot));
             }
             case "servers" -> {
                 if (args.length != 1) {
-                    send(source, "Unknown subcommand. Usage: /vstats [public|staff|servers|list|reload]");
+                    sendError(source, "Unknown subcommand. Usage: /vstats [public|staff|servers|list|reload|help]");
                     return;
                 }
-                requireAndRun(source, config.permissions().view(), "You do not have permission to use this command.",
-                        snapshot -> formatter.formatServers(snapshot));
+                requireAndRun(source, config.permissions().view(), permissionError("You do not have permission to use this command."),
+                        snapshot -> formatter.formatServersComponent(snapshot));
             }
             case "list" -> handleList(source, args, config);
             case "reload" -> handleReload(source, args, config);
-            default -> send(source, "Unknown subcommand. Usage: /vstats [public|staff|servers|list|reload]");
+            case "help" -> handleHelp(source, args, config);
+            default -> sendError(source, "Unknown subcommand. Usage: /vstats [public|staff|servers|list|reload|help]");
         }
     }
 
     private void handleList(CommandSource source, String[] args, PluginConfig config) {
         if (!hasPermission(source, config.permissions().list())) {
-            send(source, "You do not have permission to use this command.");
+            send(source, permissionError("You do not have permission to use this command."));
             return;
         }
         if (args.length > 2) {
-            send(source, "Usage: /vstats list [nodeId|public|staff]");
+            send(source, Component.text("Usage: /vstats list [nodeId|public|staff]", NamedTextColor.YELLOW));
             return;
         }
 
         String target = args.length == 2 ? args[1] : null;
         if ("staff".equalsIgnoreCase(target) && !hasPermission(source, config.permissions().staff())) {
-            send(source, "You do not have permission to view staff player list.");
+            send(source, permissionError("You do not have permission to view staff player list."));
             return;
         }
 
@@ -143,47 +145,80 @@ public final class VStatsCommand implements SimpleCommand {
             } else {
                 NodeSnapshot node = snapshot.nodeById(target);
                 if (node == null) {
-                    return "Velocity node not found: " + target;
+                    return Component.text("Velocity node not found: " + target, NamedTextColor.RED);
                 }
                 if (PluginConfig.GROUP_STAFF.equals(node.group()) && !hasPermission(source, config.permissions().staff())) {
-                    return "You do not have permission to view staff player list.";
+                    return permissionError("You do not have permission to view staff player list.");
                 }
                 players = new ArrayList<>(node.players());
                 players.sort(String.CASE_INSENSITIVE_ORDER);
             }
-            return formatter.formatPlayerList(players);
+            return formatter.formatPlayerListComponent(players);
         });
     }
 
     private void handleReload(CommandSource source, String[] args, PluginConfig config) {
         if (args.length != 1) {
-            send(source, "Unknown subcommand. Usage: /vstats [public|staff|servers|list|reload]");
+            sendError(source, "Unknown subcommand. Usage: /vstats [public|staff|servers|list|reload|help]");
             return;
         }
         if (!hasPermission(source, config.permissions().reload())) {
-            send(source, "You do not have permission to use this command.");
+            send(source, permissionError("You do not have permission to use this command."));
             return;
         }
         if (!reloadInProgress.compareAndSet(false, true)) {
-            send(source, "[vstats] Reload is already in progress.");
+            send(source, Component.text("[vstats] Reload is already in progress.", NamedTextColor.YELLOW));
             return;
         }
 
-        send(source, "[vstats] Reloading config...");
+        send(source, Component.text("[vstats] Reloading config...", NamedTextColor.YELLOW));
         proxyServer.getScheduler().buildTask(plugin, () -> {
             try {
                 ReloadService.ReloadResult result = reloadService.load();
                 if (result.success()) {
                     plugin.applyReload(result.config(), result.redisManager());
                 }
-                send(source, result.message());
+                send(source, reloadResultMessage(result));
             } finally {
                 reloadInProgress.set(false);
             }
         }).schedule();
     }
 
-    private void requireAndRun(CommandSource source, String permission, String error, SnapshotFormatter snapshotFormatter) {
+    private void handleHelp(CommandSource source, String[] args, PluginConfig config) {
+        if (args.length != 1) {
+            sendError(source, "Unknown subcommand. Usage: /vstats [public|staff|servers|list|reload|help]");
+            return;
+        }
+
+        List<String> commands = new ArrayList<>();
+        if (hasPermission(source, config.permissions().view())) {
+            commands.add("/vstats");
+            commands.add("/vstats public");
+        }
+        if (hasPermission(source, config.permissions().staff())) {
+            commands.add("/vstats staff");
+        }
+        if (hasPermission(source, config.permissions().view())) {
+            commands.add("/vstats servers");
+        }
+        if (hasPermission(source, config.permissions().list())) {
+            commands.add("/vstats list");
+            commands.add("/vstats list public");
+            commands.add("/vstats list <nodeId>");
+            if (hasPermission(source, config.permissions().staff())) {
+                commands.add("/vstats list staff");
+            }
+        }
+        if (hasPermission(source, config.permissions().reload())) {
+            commands.add("/vstats reload");
+        }
+        commands.add("/vstats help");
+
+        send(source, formatter.formatHelpComponent(commands));
+    }
+
+    private void requireAndRun(CommandSource source, String permission, Component error, SnapshotFormatter snapshotFormatter) {
         if (!hasPermission(source, permission)) {
             send(source, error);
             return;
@@ -209,8 +244,26 @@ public final class VStatsCommand implements SimpleCommand {
         return !(source instanceof Player) || source.hasPermission(permission);
     }
 
-    private void send(CommandSource source, String message) {
-        source.sendMessage(Component.text(message));
+    private Component permissionError(String message) {
+        return Component.text(message, NamedTextColor.RED);
+    }
+
+    private void sendError(CommandSource source, String message) {
+        send(source, Component.text(message, NamedTextColor.RED));
+    }
+
+    private Component reloadResultMessage(ReloadService.ReloadResult result) {
+        if (!result.success()) {
+            return Component.text(result.message(), NamedTextColor.RED);
+        }
+        if (!result.redisAvailable()) {
+            return Component.text(result.message(), NamedTextColor.YELLOW);
+        }
+        return Component.text(result.message(), NamedTextColor.GREEN);
+    }
+
+    private void send(CommandSource source, Component message) {
+        source.sendMessage(message);
     }
 
     /**
@@ -223,11 +276,11 @@ public final class VStatsCommand implements SimpleCommand {
     public List<String> suggest(Invocation invocation) {
         String[] args = invocation.arguments();
         if (args.length == 0) {
-            return List.of("public", "staff", "servers", "list", "reload");
+            return List.of("public", "staff", "servers", "list", "reload", "help");
         }
         if (args.length == 1) {
             String prefix = args[0].toLowerCase(Locale.ROOT);
-            return List.of("public", "staff", "servers", "list", "reload").stream()
+            return List.of("public", "staff", "servers", "list", "reload", "help").stream()
                     .filter(option -> option.startsWith(prefix))
                     .toList();
         }
@@ -242,6 +295,6 @@ public final class VStatsCommand implements SimpleCommand {
 
     @FunctionalInterface
     private interface SnapshotFormatter {
-        String format(ClusterSnapshot snapshot);
+        Component format(ClusterSnapshot snapshot);
     }
 }

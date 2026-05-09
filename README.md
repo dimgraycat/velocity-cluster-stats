@@ -23,6 +23,7 @@ It is designed for clusters where several Velocity proxies connect players to on
 - Player list for all visible players, a specific node, or the staff group
 - Backend server player counts using Velocity registered server names
 - Registered backend servers are shown even when they currently have 0 players
+- Colored chat output for headings, public/staff counts, values, and errors
 - `/vstats reload` for config reload without restarting Velocity
 - Redis failure-safe behavior: Velocity login, chat, and backend movement are not blocked when Redis is unavailable
 
@@ -39,6 +40,7 @@ It is designed for clusters where several Velocity proxies connect players to on
 | `/vstats list <nodeId>` | Show players on a Velocity node | `vstats.list` |
 | `/vstats list staff` | Show players on staff nodes | `vstats.list` + `vstats.staff` |
 | `/vstats reload` | Reload config and Redis settings | `vstats.reload` |
+| `/vstats help` | Show available vstats commands | none |
 
 Console execution is treated as an administrator operation. Player permissions are delegated to Velocity's permission API.
 
@@ -54,6 +56,7 @@ This plugin does not depend on LuckPerms directly. It calls Velocity's permissio
 | `vstats.reload` | `/vstats reload` |
 
 Grant `vstats.*` to allow all Velocity Cluster Stats commands.
+`/vstats help` has no permission node and shows only commands the sender can run.
 
 LuckPerms examples:
 

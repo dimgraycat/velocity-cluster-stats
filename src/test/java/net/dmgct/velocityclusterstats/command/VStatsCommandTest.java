@@ -7,13 +7,13 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.scheduler.ScheduledTask;
 import com.velocitypowered.api.scheduler.Scheduler;
 import net.dmgct.velocityclusterstats.TestConfigs;
-import net.kyori.adventure.text.Component;
 import net.dmgct.velocityclusterstats.config.PluginConfig;
 import net.dmgct.velocityclusterstats.model.ClusterSnapshot;
 import net.dmgct.velocityclusterstats.model.NodeSnapshot;
 import net.dmgct.velocityclusterstats.redis.RedisManager;
 import net.dmgct.velocityclusterstats.redis.StatsRepository;
 import org.junit.jupiter.api.Test;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
 import java.util.List;
 import java.util.Map;
@@ -22,11 +22,14 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class VStatsCommandTest {
+    private static final PlainTextComponentSerializer PLAIN_TEXT = PlainTextComponentSerializer.plainText();
+
     @Test
     void executeRejectsUnknownSubcommandsWithoutScheduler() {
         VStatsCommand command = command(false);
@@ -35,7 +38,47 @@ class VStatsCommandTest {
 
         command.execute(invocation);
 
-        verify(source).sendMessage(Component.text("Unknown subcommand. Usage: /vstats [public|staff|servers|list|reload]"));
+        verifyPlainMessage(source, "Unknown subcommand. Usage: /vstats [public|staff|servers|list|reload|help]");
+    }
+
+    @Test
+    void executeHelpListsAllCommandsForConsoleWithoutScheduler() {
+        VStatsCommand command = command(false);
+        CommandSource source = mock(CommandSource.class);
+        SimpleCommand.Invocation invocation = invocation(source, "help");
+
+        command.execute(invocation);
+
+        verifyPlainMessage(source, """
+                > /vstats
+                > /vstats public
+                > /vstats staff
+                > /vstats servers
+                > /vstats list
+                > /vstats list public
+                > /vstats list <nodeId>
+                > /vstats list staff
+                > /vstats reload
+                > /vstats help""");
+    }
+
+    @Test
+    void executeHelpListsOnlyPermittedCommandsForPlayer() {
+        VStatsCommand command = command(false);
+        Player source = mock(Player.class);
+        when(source.hasPermission("vstats.view")).thenReturn(true);
+        when(source.hasPermission("vstats.list")).thenReturn(false);
+        when(source.hasPermission("vstats.staff")).thenReturn(false);
+        when(source.hasPermission("vstats.reload")).thenReturn(false);
+        SimpleCommand.Invocation invocation = invocation(source, "help");
+
+        command.execute(invocation);
+
+        verifyPlainMessage(source, """
+                > /vstats
+                > /vstats public
+                > /vstats servers
+                > /vstats help""");
     }
 
     @Test
@@ -46,7 +89,7 @@ class VStatsCommandTest {
 
         command.execute(invocation);
 
-        verify(source).sendMessage(Component.text("Usage: /vstats list [nodeId|public|staff]"));
+        verifyPlainMessage(source, "Usage: /vstats list [nodeId|public|staff]");
     }
 
     @Test
@@ -74,7 +117,7 @@ class VStatsCommandTest {
 
         command.execute(invocation(source, "list", "public"));
 
-        verify(source).sendMessage(Component.text("There are 2 player(s): alpha, Beta"));
+        verifyPlainMessage(source, "There are 2 player(s): alpha, Beta");
     }
 
     @Test
@@ -86,7 +129,7 @@ class VStatsCommandTest {
 
         command.execute(invocation);
 
-        verify(source).sendMessage(Component.text("You do not have permission to use this command."));
+        verifyPlainMessage(source, "You do not have permission to use this command.");
     }
 
     @Test
@@ -98,7 +141,7 @@ class VStatsCommandTest {
 
         command.execute(invocation);
 
-        verify(source).sendMessage(Component.text("You do not have permission to view staff stats."));
+        verifyPlainMessage(source, "You do not have permission to view staff stats.");
     }
 
     @Test
@@ -111,7 +154,7 @@ class VStatsCommandTest {
 
         command.execute(invocation);
 
-        verify(source).sendMessage(Component.text("You do not have permission to view staff player list."));
+        verifyPlainMessage(source, "You do not have permission to view staff player list.");
     }
 
     @Test
@@ -122,7 +165,7 @@ class VStatsCommandTest {
 
         command.execute(invocation);
 
-        verify(source).sendMessage(Component.text("[vstats] Reload is already in progress."));
+        verifyPlainMessage(source, "[vstats] Reload is already in progress.");
     }
 
     @Test
@@ -132,6 +175,15 @@ class VStatsCommandTest {
         when(invocation.arguments()).thenReturn(new String[]{"s"});
 
         assertEquals(List.of("staff", "servers"), command.suggest(invocation));
+    }
+
+    @Test
+    void suggestReturnsHelpSubcommand() {
+        VStatsCommand command = command(false);
+        SimpleCommand.Invocation invocation = mock(SimpleCommand.Invocation.class);
+        when(invocation.arguments()).thenReturn(new String[]{"h"});
+
+        assertEquals(List.of("help"), command.suggest(invocation));
     }
 
     @Test
@@ -184,5 +236,9 @@ class VStatsCommandTest {
         });
         when(taskBuilder.schedule()).thenReturn(mock(ScheduledTask.class));
         return proxyServer;
+    }
+
+    private void verifyPlainMessage(CommandSource source, String expected) {
+        verify(source).sendMessage(argThat(component -> expected.equals(PLAIN_TEXT.serialize(component))));
     }
 }
