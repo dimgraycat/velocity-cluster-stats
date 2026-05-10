@@ -1065,21 +1065,24 @@ Total: 42 players
 LuckPerms を Velocity 側に導入している場合は、LuckPerms の権限ノードで制御する。
 
 実装上は LuckPerms API に直接依存しない。  
-CommandSource に対して `hasPermission(...)` を呼び出し、Velocity 側の権限プロバイダに判定を委譲する。
+CommandSource に対して `getPermissionValue(...)` を呼び出し、Velocity 側の権限プロバイダに判定を委譲する。
+`Tristate.FALSE` の場合だけ拒否し、`Tristate.TRUE` と `Tristate.UNDEFINED` は許可する。
+これにより LuckPerms などで権限設定がない場合でも、デフォルトではコマンドを利用できる。
 
 例:
 
 ```java
-source.hasPermission(config.permissions().view())
-source.hasPermission(config.permissions().staff())
-source.hasPermission(config.permissions().list())
-source.hasPermission(config.permissions().reload())
+source.getPermissionValue(config.permissions().view()) != Tristate.FALSE
+source.getPermissionValue(config.permissions().staff()) != Tristate.FALSE
+source.getPermissionValue(config.permissions().list()) != Tristate.FALSE
+source.getPermissionValue(config.permissions().reload()) != Tristate.FALSE
 ```
 
 理由:
 
 - LuckPerms 以外の Velocity 対応 permission plugin にも対応しやすくするため。
 - LuckPerms が未導入でも Plugin 自体は起動できるようにするため。
+- LuckPerms などで未設定の場合は初期状態で利用可能にし、必要な場合だけ明示的に拒否できるようにするため。
 - 権限管理は Plugin 独自実装ではなく、既存の Velocity 権限システムへ委譲するため。
 
 Console からの実行は管理者操作として扱い、権限チェックを通過させる。  
@@ -1093,6 +1096,7 @@ Player からの実行のみ、以下の権限ノードを確認する。
 | `vstats.reload` | `/vstats reload` を実行できる |
 
 `/vstats help` は権限なしで実行でき、実行者が利用可能なコマンドのみ表示する。
+未定義の permission node は許可扱いのため、権限設定がない環境では全コマンドを表示する。
 
 LuckPerms 設定例:
 

@@ -47,6 +47,7 @@ Console execution is treated as an administrator operation. Player permissions a
 ## Permissions
 
 This plugin does not depend on LuckPerms directly. It calls Velocity's permission API, so any Velocity-compatible permission plugin can provide these nodes.
+If a permission is undefined, the command is allowed by default. Set a node to `false` in LuckPerms when you want to deny it.
 
 | Permission | Allows |
 |---|---|
@@ -76,7 +77,7 @@ LuckPerms examples:
 
 The `vstats.*` line is enough for full access. The individual permission lines are useful when you want more granular control.
 
-Without `vstats.staff`, `/vstats list` shows only public players. Staff-only stats and staff player lists require `vstats.staff`.
+When `vstats.staff` is explicitly denied, `/vstats list` shows only public players. Staff-only stats and staff player lists are hidden.
 
 ## Installation
 

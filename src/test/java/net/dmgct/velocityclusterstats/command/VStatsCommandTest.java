@@ -2,6 +2,7 @@ package net.dmgct.velocityclusterstats.command;
 
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
+import com.velocitypowered.api.permission.Tristate;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.scheduler.ScheduledTask;
@@ -66,10 +67,10 @@ class VStatsCommandTest {
     void executeHelpListsOnlyPermittedCommandsForPlayer() {
         VStatsCommand command = command(false);
         Player source = mock(Player.class);
-        when(source.hasPermission("vstats.view")).thenReturn(true);
-        when(source.hasPermission("vstats.list")).thenReturn(false);
-        when(source.hasPermission("vstats.staff")).thenReturn(false);
-        when(source.hasPermission("vstats.reload")).thenReturn(false);
+        when(source.getPermissionValue("vstats.view")).thenReturn(Tristate.TRUE);
+        when(source.getPermissionValue("vstats.list")).thenReturn(Tristate.FALSE);
+        when(source.getPermissionValue("vstats.staff")).thenReturn(Tristate.FALSE);
+        when(source.getPermissionValue("vstats.reload")).thenReturn(Tristate.FALSE);
         SimpleCommand.Invocation invocation = invocation(source, "help");
 
         command.execute(invocation);
@@ -78,6 +79,31 @@ class VStatsCommandTest {
                 > /vstats
                 > /vstats public
                 > /vstats servers
+                > /vstats help""");
+    }
+
+    @Test
+    void executeHelpTreatsUndefinedPermissionsAsAllowedForPlayer() {
+        VStatsCommand command = command(false);
+        Player source = mock(Player.class);
+        when(source.getPermissionValue("vstats.view")).thenReturn(Tristate.UNDEFINED);
+        when(source.getPermissionValue("vstats.list")).thenReturn(Tristate.UNDEFINED);
+        when(source.getPermissionValue("vstats.staff")).thenReturn(Tristate.UNDEFINED);
+        when(source.getPermissionValue("vstats.reload")).thenReturn(Tristate.UNDEFINED);
+        SimpleCommand.Invocation invocation = invocation(source, "help");
+
+        command.execute(invocation);
+
+        verifyPlainMessage(source, """
+                > /vstats
+                > /vstats public
+                > /vstats staff
+                > /vstats servers
+                > /vstats list
+                > /vstats list public
+                > /vstats list <nodeId>
+                > /vstats list staff
+                > /vstats reload
                 > /vstats help""");
     }
 
@@ -124,7 +150,7 @@ class VStatsCommandTest {
     void executeRejectsPlayerWithoutViewPermission() {
         VStatsCommand command = command(false);
         Player source = mock(Player.class);
-        when(source.hasPermission("vstats.view")).thenReturn(false);
+        when(source.getPermissionValue("vstats.view")).thenReturn(Tristate.FALSE);
         SimpleCommand.Invocation invocation = invocation(source);
 
         command.execute(invocation);
@@ -136,7 +162,7 @@ class VStatsCommandTest {
     void executeRejectsStaffStatsWithoutStaffPermission() {
         VStatsCommand command = command(false);
         Player source = mock(Player.class);
-        when(source.hasPermission("vstats.staff")).thenReturn(false);
+        when(source.getPermissionValue("vstats.staff")).thenReturn(Tristate.FALSE);
         SimpleCommand.Invocation invocation = invocation(source, "staff");
 
         command.execute(invocation);
@@ -148,8 +174,8 @@ class VStatsCommandTest {
     void executeRejectsStaffListWithoutStaffPermission() {
         VStatsCommand command = command(false);
         Player source = mock(Player.class);
-        when(source.hasPermission("vstats.list")).thenReturn(true);
-        when(source.hasPermission("vstats.staff")).thenReturn(false);
+        when(source.getPermissionValue("vstats.list")).thenReturn(Tristate.TRUE);
+        when(source.getPermissionValue("vstats.staff")).thenReturn(Tristate.FALSE);
         SimpleCommand.Invocation invocation = invocation(source, "list", "staff");
 
         command.execute(invocation);

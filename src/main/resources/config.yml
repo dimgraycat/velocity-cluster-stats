@@ -62,6 +62,8 @@ command:
 
 permissions:
   # Permission nodes checked through Velocity's permission API.
+  # Undefined permissions are allowed by default; explicitly set a node to false
+  # in LuckPerms or another Velocity permission plugin to deny a command.
   # Console execution is treated as an administrator operation.
   view: "vstats.view"
   staff: "vstats.staff"

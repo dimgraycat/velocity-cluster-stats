@@ -2,6 +2,7 @@ package net.dmgct.velocityclusterstats.command;
 
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
+import com.velocitypowered.api.permission.Tristate;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import net.dmgct.velocityclusterstats.VelocityClusterStatsPlugin;
@@ -241,7 +242,7 @@ public final class VStatsCommand implements SimpleCommand {
     }
 
     private boolean hasPermission(CommandSource source, String permission) {
-        return !(source instanceof Player) || source.hasPermission(permission);
+        return !(source instanceof Player) || source.getPermissionValue(permission) != Tristate.FALSE;
     }
 
     private Component permissionError(String message) {
