@@ -12,6 +12,7 @@ import redis.clients.jedis.Jedis;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -91,6 +92,50 @@ class HeartbeatPublisherTest {
         verify(jedis, never()).hset(eq("vstats:nodes:prx01:player_servers"), anyMap());
         verify(jedis, never()).hset(eq("vstats:nodes:prx01:backends"), anyMap());
         verify(player, never()).getCurrentServer();
+    }
+
+    @Test
+    void publishRemovesStaleNodeIdsFromNodeIndex() {
+        ProxyServer proxyServer = mock(ProxyServer.class);
+        when(proxyServer.getAllPlayers()).thenReturn(List.of());
+        when(proxyServer.getAllServers()).thenReturn(List.of());
+
+        Jedis jedis = mock(Jedis.class);
+        when(jedis.smembers("vstats:nodes")).thenReturn(Set.of("prx01", "old"));
+        when(jedis.exists("vstats:nodes:old:meta")).thenReturn(false);
+        RedisManager manager = mock(RedisManager.class);
+        when(manager.getResource()).thenReturn(jedis);
+
+        new HeartbeatPublisher(proxyServer).publish(TestConfigs.config(), manager);
+
+        verify(jedis).expire("vstats:nodes", 15);
+        verify(jedis).del(
+                "vstats:nodes:old:meta",
+                "vstats:nodes:old:players",
+                "vstats:nodes:old:player_servers",
+                "vstats:nodes:old:backends"
+        );
+        verify(jedis).srem("vstats:nodes", "old");
+    }
+
+    @Test
+    void removeNodeDeletesOwnKeysAndIndexEntry() {
+        ProxyServer proxyServer = mock(ProxyServer.class);
+        Jedis jedis = mock(Jedis.class);
+        when(jedis.smembers("vstats:nodes")).thenReturn(Set.of("prx01"));
+        RedisManager manager = mock(RedisManager.class);
+        when(manager.getResource()).thenReturn(jedis);
+
+        new HeartbeatPublisher(proxyServer).removeNode(TestConfigs.config(), manager);
+
+        verify(jedis).del(
+                "vstats:nodes:prx01:meta",
+                "vstats:nodes:prx01:players",
+                "vstats:nodes:prx01:player_servers",
+                "vstats:nodes:prx01:backends"
+        );
+        verify(jedis).srem("vstats:nodes", "prx01");
+        verify(manager).markSuccess();
     }
 
     private RegisteredServer server(String name) {

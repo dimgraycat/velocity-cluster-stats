@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Publishes this Velocity node's current player and backend snapshot to Redis.
@@ -96,9 +97,47 @@ public final class HeartbeatPublisher {
             jedis.expire(keys.players(nodeId), ttlSeconds);
             jedis.expire(keys.playerServers(nodeId), ttlSeconds);
             jedis.expire(keys.backends(nodeId), ttlSeconds);
+            jedis.expire(keys.nodes(), ttlSeconds);
+            removeStaleNodes(jedis, keys, nodeId);
             redisManager.markSuccess();
         } catch (RuntimeException exception) {
             redisManager.markFailure(exception);
         }
+    }
+
+    /**
+     * Removes this node's Redis state during a graceful Velocity shutdown.
+     *
+     * @param config current runtime config
+     * @param redisManager Redis connection manager
+     */
+    public void removeNode(PluginConfig config, RedisManager redisManager) {
+        RedisKeys keys = new RedisKeys(config);
+        String nodeId = config.node().id();
+        try (Jedis jedis = redisManager.getResource()) {
+            deleteNodeKeys(jedis, keys, nodeId);
+            jedis.srem(keys.nodes(), nodeId);
+            removeStaleNodes(jedis, keys, nodeId);
+            redisManager.markSuccess();
+        } catch (RuntimeException exception) {
+            redisManager.markFailure(exception);
+        }
+    }
+
+    private static void removeStaleNodes(Jedis jedis, RedisKeys keys, String currentNodeId) {
+        Set<String> nodeIds = jedis.smembers(keys.nodes());
+        if (nodeIds == null) {
+            return;
+        }
+        for (String nodeId : nodeIds) {
+            if (!currentNodeId.equals(nodeId) && !jedis.exists(keys.meta(nodeId))) {
+                deleteNodeKeys(jedis, keys, nodeId);
+                jedis.srem(keys.nodes(), nodeId);
+            }
+        }
+    }
+
+    private static void deleteNodeKeys(Jedis jedis, RedisKeys keys, String nodeId) {
+        jedis.del(keys.meta(nodeId), keys.players(nodeId), keys.playerServers(nodeId), keys.backends(nodeId));
     }
 }

@@ -127,6 +127,17 @@ redis:
 
 Redis timeout は短めにしてください。Redis は stats 用の共有ストアであり、Redis 障害時も通常の Velocity 動作には影響させない設計です。
 
+コマンド出力設定:
+
+```yaml
+command:
+  primary: "vstats"
+  snapshot-cache-millis: 1000
+  player-list-limit: 100
+```
+
+`snapshot-cache-millis` は `/vstats` が短時間に連続実行された場合に直近の Redis snapshot を再利用します。`player-list-limit` は `/vstats list` 1回で表示するプレイヤー名の上限です。
+
 ## ビルド
 
 JDK 21 を使います。複数の JDK が入っている環境では、Gradle 実行前に `JAVA_HOME` をローカルの JDK 21 に合わせてください。

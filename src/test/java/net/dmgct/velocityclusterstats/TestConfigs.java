@@ -16,7 +16,7 @@ public final class TestConfigs {
                 new PluginConfig.NodeConfig("prx01", PluginConfig.GROUP_PUBLIC),
                 new PluginConfig.HeartbeatConfig(5, 15),
                 new PluginConfig.BackendConfig(backendEnabled, "unassigned"),
-                new PluginConfig.CommandConfig("vstats"),
+                new PluginConfig.CommandConfig("vstats", 1000, 100),
                 new PluginConfig.PermissionsConfig("vstats.view", "vstats.staff", "vstats.list", "vstats.reload")
         );
     }

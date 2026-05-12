@@ -76,8 +76,10 @@ public record PluginConfig(
      * Command registration settings.
      *
      * @param primary primary command alias
+     * @param snapshotCacheMillis milliseconds to reuse a recently loaded Redis snapshot for commands
+     * @param playerListLimit maximum player names shown by one list command response
      */
-    public record CommandConfig(String primary) {
+    public record CommandConfig(String primary, int snapshotCacheMillis, int playerListLimit) {
     }
 
     /**

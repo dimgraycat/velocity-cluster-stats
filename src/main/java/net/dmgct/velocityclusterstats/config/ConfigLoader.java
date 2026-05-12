@@ -107,7 +107,9 @@ public final class ConfigLoader {
                         string(backend, "unassigned-name", "unassigned")
                 ),
                 new PluginConfig.CommandConfig(
-                        string(command, "primary", "vstats")
+                        string(command, "primary", "vstats"),
+                        integer(command, "snapshot-cache-millis", 1000, 0, 60000),
+                        integer(command, "player-list-limit", 100, 1, 10000)
                 ),
                 new PluginConfig.PermissionsConfig(
                         string(permissions, "view", "vstats.view"),

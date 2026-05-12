@@ -60,6 +60,13 @@ command:
   # changed in the future.
   primary: "vstats"
 
+  # Reuse a recently loaded Redis snapshot for command output to absorb short
+  # bursts of /vstats executions.
+  snapshot-cache-millis: 1000
+
+  # Maximum player names printed by one /vstats list response.
+  player-list-limit: 100
+
 permissions:
   # Permission nodes checked through Velocity's permission API.
   # Undefined permissions are allowed by default; explicitly set a node to false

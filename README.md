@@ -127,6 +127,17 @@ redis:
 
 Keep Redis timeouts short. Redis is used only for stats storage; Redis failures should not affect normal Velocity behavior.
 
+Command output settings:
+
+```yaml
+command:
+  primary: "vstats"
+  snapshot-cache-millis: 1000
+  player-list-limit: 100
+```
+
+`snapshot-cache-millis` reuses a recent Redis snapshot for short bursts of `/vstats` commands. `player-list-limit` caps how many names one `/vstats list` response prints.
+
 ## Build
 
 Use JDK 21. If multiple JDKs are installed, set `JAVA_HOME` to your local JDK 21 installation before running Gradle.

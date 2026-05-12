@@ -17,6 +17,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -34,6 +35,8 @@ public final class VStatsCommand implements SimpleCommand {
     private final ReloadService reloadService;
     private final MessageFormatter formatter;
     private final AtomicBoolean reloadInProgress;
+    private final AtomicReference<CachedSnapshot> snapshotCache = new AtomicReference<>();
+    private final AtomicReference<CompletableFuture<ClusterSnapshot>> snapshotLoadInProgress = new AtomicReference<>();
 
     /**
      * Creates the command handler.
@@ -154,7 +157,7 @@ public final class VStatsCommand implements SimpleCommand {
                 players = new ArrayList<>(node.players());
                 players.sort(String.CASE_INSENSITIVE_ORDER);
             }
-            return formatter.formatPlayerListComponent(players);
+            return formatter.formatPlayerListComponent(players, config.command().playerListLimit());
         });
     }
 
@@ -230,15 +233,65 @@ public final class VStatsCommand implements SimpleCommand {
     private void runWithSnapshot(CommandSource source, SnapshotFormatter snapshotFormatter) {
         PluginConfig config = configRef.get();
         RedisManager redisManager = redisManagerRef.get();
+        CachedSnapshot cachedSnapshot = snapshotCache.get();
+        long now = System.currentTimeMillis();
+        if (cachedSnapshot != null && now <= cachedSnapshot.expiresAtMillis()) {
+            send(source, snapshotFormatter.format(cachedSnapshot.snapshot()));
+            return;
+        }
 
+        CompletableFuture<ClusterSnapshot> existingLoad = snapshotLoadInProgress.get();
+        if (existingLoad != null) {
+            attachSnapshotResponse(existingLoad, source, snapshotFormatter);
+            return;
+        }
+
+        CompletableFuture<ClusterSnapshot> newLoad = new CompletableFuture<>();
+        if (!snapshotLoadInProgress.compareAndSet(null, newLoad)) {
+            CompletableFuture<ClusterSnapshot> concurrentLoad = snapshotLoadInProgress.get();
+            if (concurrentLoad != null) {
+                attachSnapshotResponse(concurrentLoad, source, snapshotFormatter);
+            } else {
+                runWithSnapshot(source, snapshotFormatter);
+            }
+            return;
+        }
+        attachSnapshotResponse(newLoad, source, snapshotFormatter);
         proxyServer.getScheduler().buildTask(plugin, () -> {
             try {
                 ClusterSnapshot snapshot = statsRepository.loadSnapshot(config, redisManager);
-                send(source, snapshotFormatter.format(snapshot));
+                long cacheMillis = config.command().snapshotCacheMillis();
+                if (cacheMillis > 0) {
+                    snapshotCache.set(new CachedSnapshot(snapshot, System.currentTimeMillis() + cacheMillis));
+                }
+                newLoad.complete(snapshot);
             } catch (StatsRepository.StatsUnavailableException exception) {
-                send(source, REDIS_ERROR);
+                newLoad.completeExceptionally(exception);
+            } finally {
+                snapshotLoadInProgress.compareAndSet(newLoad, null);
             }
         }).schedule();
+    }
+
+    private void attachSnapshotResponse(
+            CompletableFuture<ClusterSnapshot> load,
+            CommandSource source,
+            SnapshotFormatter snapshotFormatter
+    ) {
+        load.whenComplete((snapshot, exception) -> sendSnapshotResult(source, snapshotFormatter, snapshot, exception));
+    }
+
+    private void sendSnapshotResult(
+            CommandSource source,
+            SnapshotFormatter snapshotFormatter,
+            ClusterSnapshot snapshot,
+            Throwable exception
+    ) {
+        if (exception != null) {
+            send(source, REDIS_ERROR);
+            return;
+        }
+        send(source, snapshotFormatter.format(snapshot));
     }
 
     private boolean hasPermission(CommandSource source, String permission) {
@@ -265,6 +318,14 @@ public final class VStatsCommand implements SimpleCommand {
 
     private void send(CommandSource source, Component message) {
         source.sendMessage(message);
+    }
+
+    /**
+     * Clears cached command snapshots after config or Redis settings change.
+     */
+    public void clearSnapshotCache() {
+        snapshotCache.set(null);
+        snapshotLoadInProgress.set(null);
     }
 
     /**
@@ -297,5 +358,8 @@ public final class VStatsCommand implements SimpleCommand {
     @FunctionalInterface
     private interface SnapshotFormatter {
         Component format(ClusterSnapshot snapshot);
+    }
+
+    private record CachedSnapshot(ClusterSnapshot snapshot, long expiresAtMillis) {
     }
 }

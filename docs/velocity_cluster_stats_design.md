@@ -527,6 +527,8 @@ backend:
 
 command:
   primary: "vstats"
+  snapshot-cache-millis: 1000
+  player-list-limit: 100
 
 permissions:
   view: "vstats.view"
@@ -646,7 +648,10 @@ reload で反映する項目:
 - `backend.*`
   - enabled
   - unassigned-name
-- `command.primary`
+- `command.*`
+  - primary
+  - snapshot-cache-millis
+  - player-list-limit
   - 原則は `vstats` のまま使用する。
   - 将来的に変更可能にする場合も、既存の `/vstats reload` が実行不能にならないようにする。
 - `permissions.*`
@@ -800,10 +805,10 @@ staff
 
 注意:
 
-- `vstats:nodes` 自体には TTL を付けなくてよい。
+- `vstats:nodes` 自体にも `heartbeat.ttl-seconds` の TTL を付け、active node の heartbeat ごとに延長する。
 - 集計時に各 `vstats:nodes:{nodeId}:meta` の存在確認を行う。
 - meta が存在しない node は inactive として無視する。
-- inactive node は必要に応じて `vstats:nodes` から削除してよい。
+- inactive node は heartbeat / shutdown / 集計時に必要に応じて `vstats:nodes` から削除してよい。
 
 ---
 
@@ -890,7 +895,8 @@ Redis に接続できない場合、Plugin は以下のように振る舞う。
 3. `vstats:nodes:{nodeId}:players` を現在のプレイヤー名 Set で置き換える。
 4. `vstats:nodes:{nodeId}:player_servers` を現在のプレイヤー名 → backend server 名の Hash で置き換える。
 5. `vstats:nodes:{nodeId}:backends` を backend server 別人数の Hash で置き換える。
-6. meta / players / player_servers / backends に TTL を設定する。
+6. meta / players / player_servers / backends / nodes index に TTL を設定する。
+7. meta が存在しない stale node id を `vstats:nodes` から削除する。
 
 疑似コード:
 
@@ -953,6 +959,19 @@ void publishHeartbeat() {
     redis.expire("vstats:nodes:" + nodeId + ":players", ttlSeconds);
     redis.expire("vstats:nodes:" + nodeId + ":player_servers", ttlSeconds);
     redis.expire("vstats:nodes:" + nodeId + ":backends", ttlSeconds);
+    redis.expire("vstats:nodes", ttlSeconds);
+
+    for (String indexedNodeId : redis.smembers("vstats:nodes")) {
+        if (!indexedNodeId.equals(nodeId) && !redis.exists("vstats:nodes:" + indexedNodeId + ":meta")) {
+            redis.del(
+                "vstats:nodes:" + indexedNodeId + ":meta",
+                "vstats:nodes:" + indexedNodeId + ":players",
+                "vstats:nodes:" + indexedNodeId + ":player_servers",
+                "vstats:nodes:" + indexedNodeId + ":backends"
+            );
+            redis.srem("vstats:nodes", indexedNodeId);
+        }
+    }
 }
 ```
 

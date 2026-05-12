@@ -27,6 +27,8 @@ class ConfigLoaderTest {
         assertEquals("prx01", config.node().id());
         assertEquals(PluginConfig.GROUP_PUBLIC, config.node().group());
         assertEquals("vstats", config.command().primary());
+        assertEquals(1000, config.command().snapshotCacheMillis());
+        assertEquals(100, config.command().playerListLimit());
     }
 
     @Test
@@ -65,6 +67,8 @@ class ConfigLoaderTest {
                   unassigned-name: "unassigned"
                 command:
                   primary: "vstats"
+                  snapshot-cache-millis: 1000
+                  player-list-limit: 100
                 permissions:
                   view: "vstats.view"
                   staff: "vstats.staff"

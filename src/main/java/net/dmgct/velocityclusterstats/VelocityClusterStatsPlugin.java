@@ -130,6 +130,10 @@ public final class VelocityClusterStatsPlugin {
         }
         RedisManager manager = redisManager.getAndSet(null);
         if (manager != null) {
+            PluginConfig config = currentConfig.get();
+            if (config != null) {
+                heartbeatPublisher.removeNode(config, manager);
+            }
             manager.close();
         }
     }
@@ -141,12 +145,28 @@ public final class VelocityClusterStatsPlugin {
      * @param newRedisManager Redis manager created for the new config
      */
     public void applyReload(PluginConfig config, RedisManager newRedisManager) {
-        RedisManager oldRedisManager = redisManager.getAndSet(newRedisManager);
+        PluginConfig oldConfig = currentConfig.get();
+        RedisManager oldRedisManager = redisManager.get();
         currentConfig.set(config);
-        registerCommand(config);
-        scheduleHeartbeat(config);
-        if (oldRedisManager != null) {
-            oldRedisManager.close();
+        redisManager.set(newRedisManager);
+        boolean applied = false;
+        try {
+            registerCommand(config);
+            scheduleHeartbeat(config);
+            if (command != null) {
+                command.clearSnapshotCache();
+            }
+            applied = true;
+        } finally {
+            if (applied) {
+                if (oldRedisManager != null) {
+                    oldRedisManager.close();
+                }
+            } else {
+                currentConfig.set(oldConfig);
+                redisManager.set(oldRedisManager);
+                newRedisManager.close();
+            }
         }
     }
 

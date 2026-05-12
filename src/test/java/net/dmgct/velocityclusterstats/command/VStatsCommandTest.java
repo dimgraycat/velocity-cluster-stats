@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -144,6 +145,68 @@ class VStatsCommandTest {
         command.execute(invocation(source, "list", "public"));
 
         verifyPlainMessage(source, "There are 2 player(s): alpha, Beta");
+    }
+
+    @Test
+    void executeListAppliesConfiguredDisplayLimit() throws Exception {
+        ProxyServer proxyServer = proxyServerThatRunsTasksImmediately();
+        StatsRepository repository = mock(StatsRepository.class);
+        RedisManager redisManager = mock(RedisManager.class);
+        PluginConfig config = new PluginConfig(
+                TestConfigs.config().redis(),
+                TestConfigs.config().node(),
+                TestConfigs.config().heartbeat(),
+                TestConfigs.config().backend(),
+                new PluginConfig.CommandConfig("vstats", 1000, 2),
+                TestConfigs.config().permissions()
+        );
+        ClusterSnapshot snapshot = ClusterSnapshot.fromNodes(List.of(
+                new NodeSnapshot("prx01", PluginConfig.GROUP_PUBLIC, 4, List.of("alpha", "Beta", "delta", "gamma"), Map.of(), 1L)
+        ));
+        when(repository.loadSnapshot(config, redisManager)).thenReturn(snapshot);
+
+        VStatsCommand command = new VStatsCommand(
+                null,
+                proxyServer,
+                new AtomicReference<>(config),
+                new AtomicReference<>(redisManager),
+                repository,
+                null,
+                new MessageFormatter(),
+                new AtomicBoolean(false)
+        );
+        CommandSource source = mock(CommandSource.class);
+
+        command.execute(invocation(source, "list", "public"));
+
+        verifyPlainMessage(source, "There are 4 player(s): alpha, Beta ... +2 more");
+    }
+
+    @Test
+    void executeReusesCachedSnapshotForShortCommandBursts() throws Exception {
+        ProxyServer proxyServer = proxyServerThatRunsTasksImmediately();
+        StatsRepository repository = mock(StatsRepository.class);
+        RedisManager redisManager = mock(RedisManager.class);
+        ClusterSnapshot snapshot = ClusterSnapshot.fromNodes(List.of(
+                new NodeSnapshot("prx01", PluginConfig.GROUP_PUBLIC, 1, List.of("alpha"), Map.of(), 1L)
+        ));
+        when(repository.loadSnapshot(TestConfigs.config(), redisManager)).thenReturn(snapshot);
+
+        VStatsCommand command = new VStatsCommand(
+                null,
+                proxyServer,
+                new AtomicReference<>(TestConfigs.config()),
+                new AtomicReference<>(redisManager),
+                repository,
+                null,
+                new MessageFormatter(),
+                new AtomicBoolean(false)
+        );
+
+        command.execute(invocation(mock(CommandSource.class), "public"));
+        command.execute(invocation(mock(CommandSource.class), "servers"));
+
+        verify(repository, times(1)).loadSnapshot(TestConfigs.config(), redisManager);
     }
 
     @Test
