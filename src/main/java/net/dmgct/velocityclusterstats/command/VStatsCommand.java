@@ -27,6 +27,10 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public final class VStatsCommand implements SimpleCommand {
     private static final Component REDIS_ERROR = Component.text("[stats] Redis connection error.", NamedTextColor.RED);
+    private static final Component SNAPSHOT_LOADING = Component.text(
+            "[stats] Snapshot is loading. Try again shortly.",
+            NamedTextColor.YELLOW
+    );
 
     private final VelocityClusterStatsPlugin plugin;
     private final ProxyServer proxyServer;
@@ -247,7 +251,7 @@ public final class VStatsCommand implements SimpleCommand {
 
         SnapshotLoad existingLoad = snapshotLoadInProgress.get();
         if (existingLoad != null && existingLoad.generation() == generation) {
-            attachSnapshotResponse(existingLoad.future(), source, snapshotFormatter);
+            send(source, SNAPSHOT_LOADING);
             return;
         }
 
@@ -256,7 +260,7 @@ public final class VStatsCommand implements SimpleCommand {
         if (!snapshotLoadInProgress.compareAndSet(existingLoad, snapshotLoad)) {
             SnapshotLoad concurrentLoad = snapshotLoadInProgress.get();
             if (concurrentLoad != null && concurrentLoad.generation() == generation) {
-                attachSnapshotResponse(concurrentLoad.future(), source, snapshotFormatter);
+                send(source, SNAPSHOT_LOADING);
             } else {
                 runWithSnapshot(source, snapshotFormatter);
             }

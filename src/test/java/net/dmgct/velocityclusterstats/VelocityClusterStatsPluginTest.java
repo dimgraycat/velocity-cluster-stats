@@ -8,6 +8,7 @@ import com.velocitypowered.api.scheduler.ScheduledTask;
 import com.velocitypowered.api.scheduler.Scheduler;
 import net.dmgct.velocityclusterstats.command.VStatsCommand;
 import net.dmgct.velocityclusterstats.config.PluginConfig;
+import net.dmgct.velocityclusterstats.redis.HeartbeatPublisher;
 import net.dmgct.velocityclusterstats.redis.RedisManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -76,6 +77,26 @@ class VelocityClusterStatsPluginTest {
         previousCommandLoad.complete(null);
         verify(oldManager).close();
         verify(newManager, never()).close();
+    }
+
+    @Test
+    void shutdownDoesNotPerformRedisCleanupSynchronously() throws Exception {
+        VelocityClusterStatsPlugin plugin = new VelocityClusterStatsPlugin(
+                mock(ProxyServer.class),
+                mock(Logger.class),
+                tempDir
+        );
+        RedisManager manager = mock(RedisManager.class);
+        HeartbeatPublisher heartbeatPublisher = mock(HeartbeatPublisher.class);
+
+        referenceField(plugin, "currentConfig", PluginConfig.class).set(TestConfigs.config());
+        referenceField(plugin, "redisManager", RedisManager.class).set(manager);
+        setField(plugin, "heartbeatPublisher", heartbeatPublisher);
+
+        plugin.onProxyShutdown(null);
+
+        verify(heartbeatPublisher, never()).removeNode(TestConfigs.config(), manager);
+        verify(manager).close();
     }
 
     private ProxyServer proxyServerForReload() {

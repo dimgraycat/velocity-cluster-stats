@@ -808,7 +808,8 @@ staff
 - `vstats:nodes` 自体にも `heartbeat.ttl-seconds` の TTL を付け、active node の heartbeat ごとに延長する。
 - 集計時に各 `vstats:nodes:{nodeId}:meta` の存在確認を行う。
 - meta が存在しない node は inactive として無視する。
-- inactive node は heartbeat / shutdown / 集計時に必要に応じて `vstats:nodes` から削除してよい。
+- inactive node は heartbeat / 集計時に必要に応じて `vstats:nodes` から削除してよい。
+- shutdown 時は Redis I/O を行わず、TTL 失効に任せる。
 
 ---
 
@@ -1159,7 +1160,7 @@ LuckPerms 設定例:
 処理:
 
 1. `vstats.view` を確認。
-2. Redis snapshot を取得。
+2. Redis snapshot を取得。すでに同一 generation の snapshot load が進行中の場合は `[stats] Snapshot is loading. Try again shortly.` を表示し、待機 callback を積まない。
 3. public block のみ表示。
 
 ### 11.3 `/vstats staff`
@@ -1167,7 +1168,7 @@ LuckPerms 設定例:
 処理:
 
 1. `vstats.staff` を確認。
-2. Redis snapshot を取得。
+2. Redis snapshot を取得。すでに同一 generation の snapshot load が進行中の場合は `[stats] Snapshot is loading. Try again shortly.` を表示し、待機 callback を積まない。
 3. staff block のみ表示。staff node が存在しない場合も `staff: 0 players` と表示する。通常の `/vstats` では staff node が存在しない場合に `[Staff]` ブロックを省略する。
 
 ### 11.4 `/vstats servers`
@@ -1175,7 +1176,7 @@ LuckPerms 設定例:
 処理:
 
 1. `vstats.view` を確認。
-2. Redis snapshot を取得。
+2. Redis snapshot を取得。すでに同一 generation の snapshot load が進行中の場合は `[stats] Snapshot is loading. Try again shortly.` を表示し、待機 callback を積まない。
 3. servers block のみ表示。
 
 ### 11.5 `/vstats list`
@@ -1183,7 +1184,7 @@ LuckPerms 設定例:
 処理:
 
 1. `vstats.list` を確認。
-2. Redis snapshot を取得。
+2. Redis snapshot を取得。すでに同一 generation の snapshot load が進行中の場合は `[stats] Snapshot is loading. Try again shortly.` を表示し、待機 callback を積まない。
 3. 実行者が `vstats.staff` を持つ場合は public + staff の全プレイヤーを表示。
 4. 実行者が `vstats.staff` を持たない場合は public のプレイヤーのみ表示。
 

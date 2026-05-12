@@ -257,6 +257,42 @@ class VStatsCommandTest {
     }
 
     @Test
+    void executeDoesNotAttachMoreCallbacksWhileSnapshotLoadIsInProgress() throws Exception {
+        Queue<Runnable> tasks = new ArrayDeque<>();
+        ProxyServer proxyServer = proxyServerThatQueuesTasks(tasks);
+        StatsRepository repository = mock(StatsRepository.class);
+        RedisManager redisManager = mock(RedisManager.class);
+        ClusterSnapshot snapshot = ClusterSnapshot.fromNodes(List.of(
+                new NodeSnapshot("prx01", PluginConfig.GROUP_PUBLIC, 1, List.of("alpha"), Map.of(), 1L)
+        ));
+        when(repository.loadSnapshot(TestConfigs.config(), redisManager)).thenReturn(snapshot);
+
+        VStatsCommand command = new VStatsCommand(
+                null,
+                proxyServer,
+                new AtomicReference<>(TestConfigs.config()),
+                new AtomicReference<>(redisManager),
+                repository,
+                null,
+                new MessageFormatter(),
+                new AtomicBoolean(false)
+        );
+        CommandSource firstSource = mock(CommandSource.class);
+        CommandSource secondSource = mock(CommandSource.class);
+
+        command.execute(invocation(firstSource, "public"));
+        command.execute(invocation(secondSource, "servers"));
+        tasks.remove().run();
+
+        verifyPlainMessage(secondSource, "[stats] Snapshot is loading. Try again shortly.");
+        verifyPlainMessage(firstSource, """
+                [Public]
+                prx01: 1 players
+                Total: 1 players""");
+        verify(repository, times(1)).loadSnapshot(TestConfigs.config(), redisManager);
+    }
+
+    @Test
     void executeRejectsPlayerWithoutViewPermission() {
         VStatsCommand command = command(false);
         Player source = mock(Player.class);

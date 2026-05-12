@@ -131,10 +131,6 @@ public final class VelocityClusterStatsPlugin {
         }
         RedisManager manager = redisManager.getAndSet(null);
         if (manager != null) {
-            PluginConfig config = currentConfig.get();
-            if (config != null) {
-                heartbeatPublisher.removeNode(config, manager);
-            }
             manager.close();
         }
     }
