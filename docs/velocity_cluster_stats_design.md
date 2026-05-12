@@ -620,7 +620,8 @@ backend:
 - `backend.enabled=true` の場合、各プレイヤーの接続先 backend server 名を Redis に保存する。
 - backend server 名は Velocity の registered server 名を使う。
 - `backend.enabled=true` の場合、各 Velocity は自分が知っている registered server を0人でも `backends` に保存する。これにより `/vstats` と `/vstats servers` は0人の backend server も表示できる。
-- プレイヤーが backend 未接続の場合は `backend.unassigned-name` の値で集計する。
+- `backend.enabled=true` でプレイヤーが backend 未接続の場合は `backend.unassigned-name` の値で集計する。
+- `backend.enabled=false` の場合、backend 接続先は保存せず、`backends` も書き込まない。
 - Fabric Server が1台の構成でもこの設定は有効のままでよい。
 - 複数 Fabric Server 構成へ移行しても config の互換性を維持する。
 
@@ -909,13 +910,15 @@ void publishHeartbeat() {
 
     for (Player player : proxyServer.getAllPlayers()) {
         String playerName = player.getUsername();
-        String backendName = player.getCurrentServer()
-            .map(serverConnection -> serverConnection.getServerInfo().getName())
-            .orElse(config.backend.unassignedName);
-
         playerNames.add(playerName);
-        playerServers.put(playerName, backendName);
-        backendCounts.put(backendName, backendCounts.getOrDefault(backendName, 0) + 1);
+
+        if (config.backend.enabled) {
+            String backendName = player.getCurrentServer()
+                .map(serverConnection -> serverConnection.getServerInfo().getName())
+                .orElse(config.backend.unassignedName);
+            playerServers.put(playerName, backendName);
+            backendCounts.put(backendName, backendCounts.getOrDefault(backendName, 0) + 1);
+        }
     }
 
     playerNames.sort(String.CASE_INSENSITIVE_ORDER);

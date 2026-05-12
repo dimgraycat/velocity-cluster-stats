@@ -52,15 +52,15 @@ public final class HeartbeatPublisher {
 
         for (Player player : proxyServer.getAllPlayers()) {
             String playerName = player.getUsername();
-            String backendName = config.backend().enabled()
-                    ? player.getCurrentServer()
-                    .map(serverConnection -> serverConnection.getServerInfo().getName())
-                    .orElse(config.backend().unassignedName())
-                    : config.backend().unassignedName();
 
             playerNames.add(playerName);
-            playerServers.put(playerName, backendName);
-            backendCounts.put(backendName, backendCounts.getOrDefault(backendName, 0) + 1);
+            if (config.backend().enabled()) {
+                String backendName = player.getCurrentServer()
+                        .map(serverConnection -> serverConnection.getServerInfo().getName())
+                        .orElse(config.backend().unassignedName());
+                playerServers.put(playerName, backendName);
+                backendCounts.put(backendName, backendCounts.getOrDefault(backendName, 0) + 1);
+            }
         }
         playerNames.sort(String.CASE_INSENSITIVE_ORDER);
 

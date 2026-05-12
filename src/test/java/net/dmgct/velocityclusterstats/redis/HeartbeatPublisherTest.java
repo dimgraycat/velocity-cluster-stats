@@ -1,5 +1,6 @@
 package net.dmgct.velocityclusterstats.redis;
 
+import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
@@ -16,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -66,6 +68,29 @@ class HeartbeatPublisherTest {
 
         verify(jedis).del("vstats:nodes:prx01:backends");
         verify(jedis, org.mockito.Mockito.never()).hset(eq("vstats:nodes:prx01:backends"), anyMap());
+    }
+
+    @Test
+    void publishDoesNotCountUnassignedBackendWhenBackendDisabledAndPlayersExist() {
+        ProxyServer proxyServer = mock(ProxyServer.class);
+        RegisteredServer lobby = server("lobby");
+        Player player = mock(Player.class);
+        when(player.getUsername()).thenReturn("alpha");
+        when(proxyServer.getAllPlayers()).thenReturn(List.of(player));
+        when(proxyServer.getAllServers()).thenReturn(List.of(lobby));
+
+        Jedis jedis = mock(Jedis.class);
+        RedisManager manager = mock(RedisManager.class);
+        when(manager.getResource()).thenReturn(jedis);
+
+        new HeartbeatPublisher(proxyServer).publish(TestConfigs.configWithBackendEnabled(false), manager);
+
+        verify(jedis).sadd("vstats:nodes:prx01:players", "alpha");
+        verify(jedis).del("vstats:nodes:prx01:player_servers");
+        verify(jedis).del("vstats:nodes:prx01:backends");
+        verify(jedis, never()).hset(eq("vstats:nodes:prx01:player_servers"), anyMap());
+        verify(jedis, never()).hset(eq("vstats:nodes:prx01:backends"), anyMap());
+        verify(player, never()).getCurrentServer();
     }
 
     private RegisteredServer server(String name) {

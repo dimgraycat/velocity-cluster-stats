@@ -4,6 +4,7 @@ import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -186,22 +187,33 @@ public final class ConfigLoader {
     private static int integer(Map<?, ?> section, String key, int fallback, int min, int max)
             throws ConfigValidationException {
         Object value = section.get(key);
-        int parsed;
+        BigInteger parsed;
         if (value == null) {
-            parsed = fallback;
+            parsed = BigInteger.valueOf(fallback);
         } else if (value instanceof Number number) {
-            parsed = number.intValue();
+            parsed = integerNumber(number, key);
         } else {
             try {
-                parsed = Integer.parseInt(Objects.toString(value));
+                parsed = new BigInteger(Objects.toString(value));
             } catch (NumberFormatException exception) {
                 throw new ConfigValidationException(key + " must be an integer", exception);
             }
         }
-        if (parsed < min || parsed > max) {
+        if (parsed.compareTo(BigInteger.valueOf(min)) < 0 || parsed.compareTo(BigInteger.valueOf(max)) > 0) {
             throw new ConfigValidationException(key + " must be between " + min + " and " + max);
         }
-        return parsed;
+        return parsed.intValue();
+    }
+
+    private static BigInteger integerNumber(Number number, String key) throws ConfigValidationException {
+        return switch (number) {
+            case Byte byteValue -> BigInteger.valueOf(byteValue);
+            case Short shortValue -> BigInteger.valueOf(shortValue);
+            case Integer integerValue -> BigInteger.valueOf(integerValue);
+            case Long longValue -> BigInteger.valueOf(longValue);
+            case BigInteger bigInteger -> bigInteger;
+            default -> throw new ConfigValidationException(key + " must be an integer");
+        };
     }
 
     /**
