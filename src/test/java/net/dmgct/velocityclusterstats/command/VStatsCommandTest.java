@@ -24,6 +24,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
@@ -239,8 +241,10 @@ class VStatsCommandTest {
         CommandSource secondSource = mock(CommandSource.class);
 
         command.execute(invocation(firstSource, "public"));
-        command.clearSnapshotCache();
+        var previousLoad = command.clearSnapshotCache();
+        assertFalse(previousLoad.isDone());
         tasks.remove().run();
+        assertTrue(previousLoad.isDone());
         command.execute(invocation(secondSource, "public"));
         tasks.remove().run();
 

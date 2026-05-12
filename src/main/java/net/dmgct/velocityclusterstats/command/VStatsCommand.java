@@ -333,10 +333,11 @@ public final class VStatsCommand implements SimpleCommand {
     /**
      * Clears cached command snapshots after config or Redis settings change.
      */
-    public void clearSnapshotCache() {
+    public CompletableFuture<?> clearSnapshotCache() {
         snapshotGeneration.incrementAndGet();
         snapshotCache.set(null);
-        snapshotLoadInProgress.set(null);
+        SnapshotLoad previousLoad = snapshotLoadInProgress.getAndSet(null);
+        return previousLoad == null ? CompletableFuture.completedFuture(null) : previousLoad.future();
     }
 
     /**

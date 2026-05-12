@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -153,21 +154,26 @@ public final class VelocityClusterStatsPlugin {
         try {
             registerCommand(config);
             scheduleHeartbeat(config);
+            CompletableFuture<?> previousCommandLoad = CompletableFuture.completedFuture(null);
             if (command != null) {
-                command.clearSnapshotCache();
+                previousCommandLoad = command.clearSnapshotCache();
             }
             applied = true;
+            closeWhenComplete(oldRedisManager, previousCommandLoad);
         } finally {
-            if (applied) {
-                if (oldRedisManager != null) {
-                    oldRedisManager.close();
-                }
-            } else {
+            if (!applied) {
                 currentConfig.set(oldConfig);
                 redisManager.set(oldRedisManager);
                 newRedisManager.close();
             }
         }
+    }
+
+    private void closeWhenComplete(RedisManager manager, CompletableFuture<?> future) {
+        if (manager == null) {
+            return;
+        }
+        future.whenComplete((ignored, throwable) -> manager.close());
     }
 
     private void registerCommand(PluginConfig config) {
