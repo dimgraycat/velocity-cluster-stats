@@ -16,8 +16,10 @@ import net.dmgct.velocityclusterstats.redis.StatsRepository;
 import org.junit.jupiter.api.Test;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
+import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -210,6 +212,47 @@ class VStatsCommandTest {
     }
 
     @Test
+    void clearSnapshotCachePreventsInFlightLoadFromReCachingOldSnapshot() throws Exception {
+        Queue<Runnable> tasks = new ArrayDeque<>();
+        ProxyServer proxyServer = proxyServerThatQueuesTasks(tasks);
+        StatsRepository repository = mock(StatsRepository.class);
+        RedisManager redisManager = mock(RedisManager.class);
+        ClusterSnapshot oldSnapshot = ClusterSnapshot.fromNodes(List.of(
+                new NodeSnapshot("old", PluginConfig.GROUP_PUBLIC, 1, List.of("oldPlayer"), Map.of(), 1L)
+        ));
+        ClusterSnapshot newSnapshot = ClusterSnapshot.fromNodes(List.of(
+                new NodeSnapshot("new", PluginConfig.GROUP_PUBLIC, 2, List.of("alpha", "Beta"), Map.of(), 1L)
+        ));
+        when(repository.loadSnapshot(TestConfigs.config(), redisManager)).thenReturn(oldSnapshot, newSnapshot);
+
+        VStatsCommand command = new VStatsCommand(
+                null,
+                proxyServer,
+                new AtomicReference<>(TestConfigs.config()),
+                new AtomicReference<>(redisManager),
+                repository,
+                null,
+                new MessageFormatter(),
+                new AtomicBoolean(false)
+        );
+        CommandSource firstSource = mock(CommandSource.class);
+        CommandSource secondSource = mock(CommandSource.class);
+
+        command.execute(invocation(firstSource, "public"));
+        command.clearSnapshotCache();
+        tasks.remove().run();
+        command.execute(invocation(secondSource, "public"));
+        tasks.remove().run();
+
+        verify(repository, times(2)).loadSnapshot(TestConfigs.config(), redisManager);
+        verifyPlainMessage(firstSource, "[stats] Redis connection error.");
+        verifyPlainMessage(secondSource, """
+                [Public]
+                new: 2 players
+                Total: 2 players""");
+    }
+
+    @Test
     void executeRejectsPlayerWithoutViewPermission() {
         VStatsCommand command = command(false);
         Player source = mock(Player.class);
@@ -321,6 +364,19 @@ class VStatsCommandTest {
         when(scheduler.buildTask(any(), any(Runnable.class))).thenAnswer(invocation -> {
             Runnable task = invocation.getArgument(1);
             task.run();
+            return taskBuilder;
+        });
+        when(taskBuilder.schedule()).thenReturn(mock(ScheduledTask.class));
+        return proxyServer;
+    }
+
+    private ProxyServer proxyServerThatQueuesTasks(Queue<Runnable> tasks) {
+        ProxyServer proxyServer = mock(ProxyServer.class);
+        Scheduler scheduler = mock(Scheduler.class);
+        Scheduler.TaskBuilder taskBuilder = mock(Scheduler.TaskBuilder.class);
+        when(proxyServer.getScheduler()).thenReturn(scheduler);
+        when(scheduler.buildTask(any(), any(Runnable.class))).thenAnswer(invocation -> {
+            tasks.add(invocation.getArgument(1));
             return taskBuilder;
         });
         when(taskBuilder.schedule()).thenReturn(mock(ScheduledTask.class));

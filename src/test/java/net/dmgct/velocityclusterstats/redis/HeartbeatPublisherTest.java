@@ -8,6 +8,7 @@ import net.dmgct.velocityclusterstats.TestConfigs;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import redis.clients.jedis.Jedis;
+import redis.clients.jedis.Transaction;
 
 import java.net.InetSocketAddress;
 import java.util.List;
@@ -45,12 +46,14 @@ class HeartbeatPublisherTest {
         when(proxyServer.getAllServers()).thenReturn(List.of(main, lobby));
 
         Jedis jedis = mock(Jedis.class);
+        Transaction transaction = transactionFor(jedis);
         RedisManager manager = mock(RedisManager.class);
         when(manager.getResource()).thenReturn(jedis);
 
         new HeartbeatPublisher(proxyServer).publish(TestConfigs.config(), manager);
 
-        verify(jedis).hset("vstats:nodes:prx01:backends", Map.of("lobby", "0", "main", "0"));
+        verify(transaction).hset("vstats:nodes:prx01:backends", Map.of("lobby", "0", "main", "0"));
+        verify(transaction).exec();
         verify(manager).markSuccess();
     }
 
@@ -62,13 +65,14 @@ class HeartbeatPublisherTest {
         when(proxyServer.getAllServers()).thenReturn(List.of(lobby));
 
         Jedis jedis = mock(Jedis.class);
+        Transaction transaction = transactionFor(jedis);
         RedisManager manager = mock(RedisManager.class);
         when(manager.getResource()).thenReturn(jedis);
 
         new HeartbeatPublisher(proxyServer).publish(TestConfigs.configWithBackendEnabled(false), manager);
 
-        verify(jedis).del("vstats:nodes:prx01:backends");
-        verify(jedis, org.mockito.Mockito.never()).hset(eq("vstats:nodes:prx01:backends"), anyMap());
+        verify(transaction).del("vstats:nodes:prx01:backends");
+        verify(transaction, org.mockito.Mockito.never()).hset(eq("vstats:nodes:prx01:backends"), anyMap());
     }
 
     @Test
@@ -81,16 +85,17 @@ class HeartbeatPublisherTest {
         when(proxyServer.getAllServers()).thenReturn(List.of(lobby));
 
         Jedis jedis = mock(Jedis.class);
+        Transaction transaction = transactionFor(jedis);
         RedisManager manager = mock(RedisManager.class);
         when(manager.getResource()).thenReturn(jedis);
 
         new HeartbeatPublisher(proxyServer).publish(TestConfigs.configWithBackendEnabled(false), manager);
 
-        verify(jedis).sadd("vstats:nodes:prx01:players", "alpha");
-        verify(jedis).del("vstats:nodes:prx01:player_servers");
-        verify(jedis).del("vstats:nodes:prx01:backends");
-        verify(jedis, never()).hset(eq("vstats:nodes:prx01:player_servers"), anyMap());
-        verify(jedis, never()).hset(eq("vstats:nodes:prx01:backends"), anyMap());
+        verify(transaction).sadd("vstats:nodes:prx01:players", "alpha");
+        verify(transaction).del("vstats:nodes:prx01:player_servers");
+        verify(transaction).del("vstats:nodes:prx01:backends");
+        verify(transaction, never()).hset(eq("vstats:nodes:prx01:player_servers"), anyMap());
+        verify(transaction, never()).hset(eq("vstats:nodes:prx01:backends"), anyMap());
         verify(player, never()).getCurrentServer();
     }
 
@@ -101,6 +106,7 @@ class HeartbeatPublisherTest {
         when(proxyServer.getAllServers()).thenReturn(List.of());
 
         Jedis jedis = mock(Jedis.class);
+        Transaction transaction = transactionFor(jedis);
         when(jedis.smembers("vstats:nodes")).thenReturn(Set.of("prx01", "old"));
         when(jedis.exists("vstats:nodes:old:meta")).thenReturn(false);
         RedisManager manager = mock(RedisManager.class);
@@ -108,7 +114,7 @@ class HeartbeatPublisherTest {
 
         new HeartbeatPublisher(proxyServer).publish(TestConfigs.config(), manager);
 
-        verify(jedis).expire("vstats:nodes", 15);
+        verify(transaction).expire("vstats:nodes", 15);
         verify(jedis).del(
                 "vstats:nodes:old:meta",
                 "vstats:nodes:old:players",
@@ -142,5 +148,11 @@ class HeartbeatPublisherTest {
         RegisteredServer server = mock(RegisteredServer.class);
         when(server.getServerInfo()).thenReturn(new ServerInfo(name, InetSocketAddress.createUnresolved("127.0.0.1", 25565)));
         return server;
+    }
+
+    private Transaction transactionFor(Jedis jedis) {
+        Transaction transaction = mock(Transaction.class);
+        when(jedis.multi()).thenReturn(transaction);
+        return transaction;
     }
 }

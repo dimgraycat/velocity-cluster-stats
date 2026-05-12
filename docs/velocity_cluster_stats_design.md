@@ -929,37 +929,39 @@ void publishHeartbeat() {
 
     playerNames.sort(String.CASE_INSENSITIVE_ORDER);
 
-    redis.sadd("vstats:nodes", nodeId);
+    Transaction tx = redis.multi();
+    tx.sadd("vstats:nodes", nodeId);
 
-    redis.hset("vstats:nodes:" + nodeId + ":meta", Map.of(
+    tx.hset("vstats:nodes:" + nodeId + ":meta", Map.of(
         "id", nodeId,
         "group", config.node.group,
         "player_count", String.valueOf(playerNames.size()),
         "updated_at", String.valueOf(System.currentTimeMillis())
     ));
 
-    redis.del("vstats:nodes:" + nodeId + ":players");
+    tx.del("vstats:nodes:" + nodeId + ":players");
     if (!playerNames.isEmpty()) {
-        redis.sadd("vstats:nodes:" + nodeId + ":players", playerNames.toArray(String[]::new));
+        tx.sadd("vstats:nodes:" + nodeId + ":players", playerNames.toArray(String[]::new));
     }
 
-    redis.del("vstats:nodes:" + nodeId + ":player_servers");
+    tx.del("vstats:nodes:" + nodeId + ":player_servers");
     if (!playerServers.isEmpty()) {
-        redis.hset("vstats:nodes:" + nodeId + ":player_servers", playerServers);
+        tx.hset("vstats:nodes:" + nodeId + ":player_servers", playerServers);
     }
 
-    redis.del("vstats:nodes:" + nodeId + ":backends");
+    tx.del("vstats:nodes:" + nodeId + ":backends");
     if (!backendCounts.isEmpty()) {
         Map<String, String> backendCountStrings = backendCounts.entrySet().stream()
             .collect(Collectors.toMap(Map.Entry::getKey, e -> String.valueOf(e.getValue())));
-        redis.hset("vstats:nodes:" + nodeId + ":backends", backendCountStrings);
+        tx.hset("vstats:nodes:" + nodeId + ":backends", backendCountStrings);
     }
 
-    redis.expire("vstats:nodes:" + nodeId + ":meta", ttlSeconds);
-    redis.expire("vstats:nodes:" + nodeId + ":players", ttlSeconds);
-    redis.expire("vstats:nodes:" + nodeId + ":player_servers", ttlSeconds);
-    redis.expire("vstats:nodes:" + nodeId + ":backends", ttlSeconds);
-    redis.expire("vstats:nodes", ttlSeconds);
+    tx.expire("vstats:nodes:" + nodeId + ":meta", ttlSeconds);
+    tx.expire("vstats:nodes:" + nodeId + ":players", ttlSeconds);
+    tx.expire("vstats:nodes:" + nodeId + ":player_servers", ttlSeconds);
+    tx.expire("vstats:nodes:" + nodeId + ":backends", ttlSeconds);
+    tx.expire("vstats:nodes", ttlSeconds);
+    tx.exec();
 
     for (String indexedNodeId : redis.smembers("vstats:nodes")) {
         if (!indexedNodeId.equals(nodeId) && !redis.exists("vstats:nodes:" + indexedNodeId + ":meta")) {

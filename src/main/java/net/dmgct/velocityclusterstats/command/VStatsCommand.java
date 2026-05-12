@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -36,7 +37,8 @@ public final class VStatsCommand implements SimpleCommand {
     private final MessageFormatter formatter;
     private final AtomicBoolean reloadInProgress;
     private final AtomicReference<CachedSnapshot> snapshotCache = new AtomicReference<>();
-    private final AtomicReference<CompletableFuture<ClusterSnapshot>> snapshotLoadInProgress = new AtomicReference<>();
+    private final AtomicReference<SnapshotLoad> snapshotLoadInProgress = new AtomicReference<>();
+    private final AtomicLong snapshotGeneration = new AtomicLong();
 
     /**
      * Creates the command handler.
@@ -233,24 +235,28 @@ public final class VStatsCommand implements SimpleCommand {
     private void runWithSnapshot(CommandSource source, SnapshotFormatter snapshotFormatter) {
         PluginConfig config = configRef.get();
         RedisManager redisManager = redisManagerRef.get();
+        long generation = snapshotGeneration.get();
         CachedSnapshot cachedSnapshot = snapshotCache.get();
         long now = System.currentTimeMillis();
-        if (cachedSnapshot != null && now <= cachedSnapshot.expiresAtMillis()) {
+        if (cachedSnapshot != null
+                && cachedSnapshot.generation() == generation
+                && now <= cachedSnapshot.expiresAtMillis()) {
             send(source, snapshotFormatter.format(cachedSnapshot.snapshot()));
             return;
         }
 
-        CompletableFuture<ClusterSnapshot> existingLoad = snapshotLoadInProgress.get();
-        if (existingLoad != null) {
-            attachSnapshotResponse(existingLoad, source, snapshotFormatter);
+        SnapshotLoad existingLoad = snapshotLoadInProgress.get();
+        if (existingLoad != null && existingLoad.generation() == generation) {
+            attachSnapshotResponse(existingLoad.future(), source, snapshotFormatter);
             return;
         }
 
         CompletableFuture<ClusterSnapshot> newLoad = new CompletableFuture<>();
-        if (!snapshotLoadInProgress.compareAndSet(null, newLoad)) {
-            CompletableFuture<ClusterSnapshot> concurrentLoad = snapshotLoadInProgress.get();
-            if (concurrentLoad != null) {
-                attachSnapshotResponse(concurrentLoad, source, snapshotFormatter);
+        SnapshotLoad snapshotLoad = new SnapshotLoad(newLoad, generation);
+        if (!snapshotLoadInProgress.compareAndSet(existingLoad, snapshotLoad)) {
+            SnapshotLoad concurrentLoad = snapshotLoadInProgress.get();
+            if (concurrentLoad != null && concurrentLoad.generation() == generation) {
+                attachSnapshotResponse(concurrentLoad.future(), source, snapshotFormatter);
             } else {
                 runWithSnapshot(source, snapshotFormatter);
             }
@@ -261,14 +267,18 @@ public final class VStatsCommand implements SimpleCommand {
             try {
                 ClusterSnapshot snapshot = statsRepository.loadSnapshot(config, redisManager);
                 long cacheMillis = config.command().snapshotCacheMillis();
-                if (cacheMillis > 0) {
-                    snapshotCache.set(new CachedSnapshot(snapshot, System.currentTimeMillis() + cacheMillis));
+                if (snapshotGeneration.get() == generation) {
+                    if (cacheMillis > 0) {
+                        snapshotCache.set(new CachedSnapshot(snapshot, System.currentTimeMillis() + cacheMillis, generation));
+                    }
+                    newLoad.complete(snapshot);
+                } else {
+                    newLoad.completeExceptionally(new StaleSnapshotException());
                 }
-                newLoad.complete(snapshot);
             } catch (StatsRepository.StatsUnavailableException exception) {
                 newLoad.completeExceptionally(exception);
             } finally {
-                snapshotLoadInProgress.compareAndSet(newLoad, null);
+                snapshotLoadInProgress.compareAndSet(snapshotLoad, null);
             }
         }).schedule();
     }
@@ -324,6 +334,7 @@ public final class VStatsCommand implements SimpleCommand {
      * Clears cached command snapshots after config or Redis settings change.
      */
     public void clearSnapshotCache() {
+        snapshotGeneration.incrementAndGet();
         snapshotCache.set(null);
         snapshotLoadInProgress.set(null);
     }
@@ -360,6 +371,12 @@ public final class VStatsCommand implements SimpleCommand {
         Component format(ClusterSnapshot snapshot);
     }
 
-    private record CachedSnapshot(ClusterSnapshot snapshot, long expiresAtMillis) {
+    private record CachedSnapshot(ClusterSnapshot snapshot, long expiresAtMillis, long generation) {
+    }
+
+    private record SnapshotLoad(CompletableFuture<ClusterSnapshot> future, long generation) {
+    }
+
+    private static final class StaleSnapshotException extends Exception {
     }
 }

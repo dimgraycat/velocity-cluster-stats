@@ -5,6 +5,7 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import net.dmgct.velocityclusterstats.config.PluginConfig;
 import redis.clients.jedis.Jedis;
+import redis.clients.jedis.Transaction;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -75,29 +76,27 @@ public final class HeartbeatPublisher {
         backendCounts.forEach((backend, count) -> backendCountStrings.put(backend, String.valueOf(count)));
 
         try (Jedis jedis = redisManager.getResource()) {
-            jedis.sadd(keys.nodes(), nodeId);
-            jedis.hset(keys.meta(nodeId), meta);
-
-            jedis.del(keys.players(nodeId));
+            Transaction transaction = jedis.multi();
+            transaction.sadd(keys.nodes(), nodeId);
+            transaction.hset(keys.meta(nodeId), meta);
+            transaction.del(keys.players(nodeId));
             if (!playerNames.isEmpty()) {
-                jedis.sadd(keys.players(nodeId), playerNames.toArray(String[]::new));
+                transaction.sadd(keys.players(nodeId), playerNames.toArray(String[]::new));
             }
-
-            jedis.del(keys.playerServers(nodeId));
+            transaction.del(keys.playerServers(nodeId));
             if (!playerServers.isEmpty()) {
-                jedis.hset(keys.playerServers(nodeId), playerServers);
+                transaction.hset(keys.playerServers(nodeId), playerServers);
             }
-
-            jedis.del(keys.backends(nodeId));
+            transaction.del(keys.backends(nodeId));
             if (!backendCountStrings.isEmpty()) {
-                jedis.hset(keys.backends(nodeId), backendCountStrings);
+                transaction.hset(keys.backends(nodeId), backendCountStrings);
             }
-
-            jedis.expire(keys.meta(nodeId), ttlSeconds);
-            jedis.expire(keys.players(nodeId), ttlSeconds);
-            jedis.expire(keys.playerServers(nodeId), ttlSeconds);
-            jedis.expire(keys.backends(nodeId), ttlSeconds);
-            jedis.expire(keys.nodes(), ttlSeconds);
+            transaction.expire(keys.meta(nodeId), ttlSeconds);
+            transaction.expire(keys.players(nodeId), ttlSeconds);
+            transaction.expire(keys.playerServers(nodeId), ttlSeconds);
+            transaction.expire(keys.backends(nodeId), ttlSeconds);
+            transaction.expire(keys.nodes(), ttlSeconds);
+            transaction.exec();
             removeStaleNodes(jedis, keys, nodeId);
             redisManager.markSuccess();
         } catch (RuntimeException exception) {
