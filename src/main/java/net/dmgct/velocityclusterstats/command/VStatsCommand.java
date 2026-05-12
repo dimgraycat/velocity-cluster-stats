@@ -17,7 +17,9 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -25,6 +27,10 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public final class VStatsCommand implements SimpleCommand {
     private static final Component REDIS_ERROR = Component.text("[stats] Redis connection error.", NamedTextColor.RED);
+    private static final Component SNAPSHOT_LOADING = Component.text(
+            "[stats] Snapshot is loading. Try again shortly.",
+            NamedTextColor.YELLOW
+    );
 
     private final VelocityClusterStatsPlugin plugin;
     private final ProxyServer proxyServer;
@@ -34,6 +40,9 @@ public final class VStatsCommand implements SimpleCommand {
     private final ReloadService reloadService;
     private final MessageFormatter formatter;
     private final AtomicBoolean reloadInProgress;
+    private final AtomicReference<CachedSnapshot> snapshotCache = new AtomicReference<>();
+    private final AtomicReference<SnapshotLoad> snapshotLoadInProgress = new AtomicReference<>();
+    private final AtomicLong snapshotGeneration = new AtomicLong();
 
     /**
      * Creates the command handler.
@@ -154,7 +163,7 @@ public final class VStatsCommand implements SimpleCommand {
                 players = new ArrayList<>(node.players());
                 players.sort(String.CASE_INSENSITIVE_ORDER);
             }
-            return formatter.formatPlayerListComponent(players);
+            return formatter.formatPlayerListComponent(players, config.command().playerListLimit());
         });
     }
 
@@ -230,15 +239,73 @@ public final class VStatsCommand implements SimpleCommand {
     private void runWithSnapshot(CommandSource source, SnapshotFormatter snapshotFormatter) {
         PluginConfig config = configRef.get();
         RedisManager redisManager = redisManagerRef.get();
+        long generation = snapshotGeneration.get();
+        CachedSnapshot cachedSnapshot = snapshotCache.get();
+        long now = System.currentTimeMillis();
+        if (cachedSnapshot != null
+                && cachedSnapshot.generation() == generation
+                && now <= cachedSnapshot.expiresAtMillis()) {
+            send(source, snapshotFormatter.format(cachedSnapshot.snapshot()));
+            return;
+        }
 
+        SnapshotLoad existingLoad = snapshotLoadInProgress.get();
+        if (existingLoad != null && existingLoad.generation() == generation) {
+            send(source, SNAPSHOT_LOADING);
+            return;
+        }
+
+        CompletableFuture<ClusterSnapshot> newLoad = new CompletableFuture<>();
+        SnapshotLoad snapshotLoad = new SnapshotLoad(newLoad, generation);
+        if (!snapshotLoadInProgress.compareAndSet(existingLoad, snapshotLoad)) {
+            SnapshotLoad concurrentLoad = snapshotLoadInProgress.get();
+            if (concurrentLoad != null && concurrentLoad.generation() == generation) {
+                send(source, SNAPSHOT_LOADING);
+            } else {
+                runWithSnapshot(source, snapshotFormatter);
+            }
+            return;
+        }
+        attachSnapshotResponse(newLoad, source, snapshotFormatter);
         proxyServer.getScheduler().buildTask(plugin, () -> {
             try {
                 ClusterSnapshot snapshot = statsRepository.loadSnapshot(config, redisManager);
-                send(source, snapshotFormatter.format(snapshot));
+                long cacheMillis = config.command().snapshotCacheMillis();
+                if (snapshotGeneration.get() == generation) {
+                    if (cacheMillis > 0) {
+                        snapshotCache.set(new CachedSnapshot(snapshot, System.currentTimeMillis() + cacheMillis, generation));
+                    }
+                    newLoad.complete(snapshot);
+                } else {
+                    newLoad.completeExceptionally(new StaleSnapshotException());
+                }
             } catch (StatsRepository.StatsUnavailableException exception) {
-                send(source, REDIS_ERROR);
+                newLoad.completeExceptionally(exception);
+            } finally {
+                snapshotLoadInProgress.compareAndSet(snapshotLoad, null);
             }
         }).schedule();
+    }
+
+    private void attachSnapshotResponse(
+            CompletableFuture<ClusterSnapshot> load,
+            CommandSource source,
+            SnapshotFormatter snapshotFormatter
+    ) {
+        load.whenComplete((snapshot, exception) -> sendSnapshotResult(source, snapshotFormatter, snapshot, exception));
+    }
+
+    private void sendSnapshotResult(
+            CommandSource source,
+            SnapshotFormatter snapshotFormatter,
+            ClusterSnapshot snapshot,
+            Throwable exception
+    ) {
+        if (exception != null) {
+            send(source, REDIS_ERROR);
+            return;
+        }
+        send(source, snapshotFormatter.format(snapshot));
     }
 
     private boolean hasPermission(CommandSource source, String permission) {
@@ -265,6 +332,16 @@ public final class VStatsCommand implements SimpleCommand {
 
     private void send(CommandSource source, Component message) {
         source.sendMessage(message);
+    }
+
+    /**
+     * Clears cached command snapshots after config or Redis settings change.
+     */
+    public CompletableFuture<?> clearSnapshotCache() {
+        snapshotGeneration.incrementAndGet();
+        snapshotCache.set(null);
+        SnapshotLoad previousLoad = snapshotLoadInProgress.getAndSet(null);
+        return previousLoad == null ? CompletableFuture.completedFuture(null) : previousLoad.future();
     }
 
     /**
@@ -297,5 +374,14 @@ public final class VStatsCommand implements SimpleCommand {
     @FunctionalInterface
     private interface SnapshotFormatter {
         Component format(ClusterSnapshot snapshot);
+    }
+
+    private record CachedSnapshot(ClusterSnapshot snapshot, long expiresAtMillis, long generation) {
+    }
+
+    private record SnapshotLoad(CompletableFuture<ClusterSnapshot> future, long generation) {
+    }
+
+    private static final class StaleSnapshotException extends Exception {
     }
 }

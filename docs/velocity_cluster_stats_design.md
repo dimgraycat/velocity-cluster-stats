@@ -527,6 +527,8 @@ backend:
 
 command:
   primary: "vstats"
+  snapshot-cache-millis: 1000
+  player-list-limit: 100
 
 permissions:
   view: "vstats.view"
@@ -620,7 +622,8 @@ backend:
 - `backend.enabled=true` の場合、各プレイヤーの接続先 backend server 名を Redis に保存する。
 - backend server 名は Velocity の registered server 名を使う。
 - `backend.enabled=true` の場合、各 Velocity は自分が知っている registered server を0人でも `backends` に保存する。これにより `/vstats` と `/vstats servers` は0人の backend server も表示できる。
-- プレイヤーが backend 未接続の場合は `backend.unassigned-name` の値で集計する。
+- `backend.enabled=true` でプレイヤーが backend 未接続の場合は `backend.unassigned-name` の値で集計する。
+- `backend.enabled=false` の場合、backend 接続先は保存せず、`backends` も書き込まない。
 - Fabric Server が1台の構成でもこの設定は有効のままでよい。
 - 複数 Fabric Server 構成へ移行しても config の互換性を維持する。
 
@@ -645,7 +648,10 @@ reload で反映する項目:
 - `backend.*`
   - enabled
   - unassigned-name
-- `command.primary`
+- `command.*`
+  - primary
+  - snapshot-cache-millis
+  - player-list-limit
   - 原則は `vstats` のまま使用する。
   - 将来的に変更可能にする場合も、既存の `/vstats reload` が実行不能にならないようにする。
 - `permissions.*`
@@ -799,10 +805,11 @@ staff
 
 注意:
 
-- `vstats:nodes` 自体には TTL を付けなくてよい。
+- `vstats:nodes` 自体にも `heartbeat.ttl-seconds` の TTL を付け、active node の heartbeat ごとに延長する。
 - 集計時に各 `vstats:nodes:{nodeId}:meta` の存在確認を行う。
 - meta が存在しない node は inactive として無視する。
-- inactive node は必要に応じて `vstats:nodes` から削除してよい。
+- inactive node は heartbeat / 集計時に必要に応じて `vstats:nodes` から削除してよい。
+- shutdown 時は Redis I/O を行わず、TTL 失効に任せる。
 
 ---
 
@@ -889,7 +896,8 @@ Redis に接続できない場合、Plugin は以下のように振る舞う。
 3. `vstats:nodes:{nodeId}:players` を現在のプレイヤー名 Set で置き換える。
 4. `vstats:nodes:{nodeId}:player_servers` を現在のプレイヤー名 → backend server 名の Hash で置き換える。
 5. `vstats:nodes:{nodeId}:backends` を backend server 別人数の Hash で置き換える。
-6. meta / players / player_servers / backends に TTL を設定する。
+6. meta / players / player_servers / backends / nodes index に TTL を設定する。
+7. meta が存在しない stale node id を `vstats:nodes` から削除する。
 
 疑似コード:
 
@@ -909,47 +917,64 @@ void publishHeartbeat() {
 
     for (Player player : proxyServer.getAllPlayers()) {
         String playerName = player.getUsername();
-        String backendName = player.getCurrentServer()
-            .map(serverConnection -> serverConnection.getServerInfo().getName())
-            .orElse(config.backend.unassignedName);
-
         playerNames.add(playerName);
-        playerServers.put(playerName, backendName);
-        backendCounts.put(backendName, backendCounts.getOrDefault(backendName, 0) + 1);
+
+        if (config.backend.enabled) {
+            String backendName = player.getCurrentServer()
+                .map(serverConnection -> serverConnection.getServerInfo().getName())
+                .orElse(config.backend.unassignedName);
+            playerServers.put(playerName, backendName);
+            backendCounts.put(backendName, backendCounts.getOrDefault(backendName, 0) + 1);
+        }
     }
 
     playerNames.sort(String.CASE_INSENSITIVE_ORDER);
 
-    redis.sadd("vstats:nodes", nodeId);
+    Transaction tx = redis.multi();
+    tx.sadd("vstats:nodes", nodeId);
 
-    redis.hset("vstats:nodes:" + nodeId + ":meta", Map.of(
+    tx.hset("vstats:nodes:" + nodeId + ":meta", Map.of(
         "id", nodeId,
         "group", config.node.group,
         "player_count", String.valueOf(playerNames.size()),
         "updated_at", String.valueOf(System.currentTimeMillis())
     ));
 
-    redis.del("vstats:nodes:" + nodeId + ":players");
+    tx.del("vstats:nodes:" + nodeId + ":players");
     if (!playerNames.isEmpty()) {
-        redis.sadd("vstats:nodes:" + nodeId + ":players", playerNames.toArray(String[]::new));
+        tx.sadd("vstats:nodes:" + nodeId + ":players", playerNames.toArray(String[]::new));
     }
 
-    redis.del("vstats:nodes:" + nodeId + ":player_servers");
+    tx.del("vstats:nodes:" + nodeId + ":player_servers");
     if (!playerServers.isEmpty()) {
-        redis.hset("vstats:nodes:" + nodeId + ":player_servers", playerServers);
+        tx.hset("vstats:nodes:" + nodeId + ":player_servers", playerServers);
     }
 
-    redis.del("vstats:nodes:" + nodeId + ":backends");
+    tx.del("vstats:nodes:" + nodeId + ":backends");
     if (!backendCounts.isEmpty()) {
         Map<String, String> backendCountStrings = backendCounts.entrySet().stream()
             .collect(Collectors.toMap(Map.Entry::getKey, e -> String.valueOf(e.getValue())));
-        redis.hset("vstats:nodes:" + nodeId + ":backends", backendCountStrings);
+        tx.hset("vstats:nodes:" + nodeId + ":backends", backendCountStrings);
     }
 
-    redis.expire("vstats:nodes:" + nodeId + ":meta", ttlSeconds);
-    redis.expire("vstats:nodes:" + nodeId + ":players", ttlSeconds);
-    redis.expire("vstats:nodes:" + nodeId + ":player_servers", ttlSeconds);
-    redis.expire("vstats:nodes:" + nodeId + ":backends", ttlSeconds);
+    tx.expire("vstats:nodes:" + nodeId + ":meta", ttlSeconds);
+    tx.expire("vstats:nodes:" + nodeId + ":players", ttlSeconds);
+    tx.expire("vstats:nodes:" + nodeId + ":player_servers", ttlSeconds);
+    tx.expire("vstats:nodes:" + nodeId + ":backends", ttlSeconds);
+    tx.expire("vstats:nodes", ttlSeconds);
+    tx.exec();
+
+    for (String indexedNodeId : redis.smembers("vstats:nodes")) {
+        if (!indexedNodeId.equals(nodeId) && !redis.exists("vstats:nodes:" + indexedNodeId + ":meta")) {
+            redis.del(
+                "vstats:nodes:" + indexedNodeId + ":meta",
+                "vstats:nodes:" + indexedNodeId + ":players",
+                "vstats:nodes:" + indexedNodeId + ":player_servers",
+                "vstats:nodes:" + indexedNodeId + ":backends"
+            );
+            redis.srem("vstats:nodes", indexedNodeId);
+        }
+    }
 }
 ```
 
@@ -1135,7 +1160,7 @@ LuckPerms 設定例:
 処理:
 
 1. `vstats.view` を確認。
-2. Redis snapshot を取得。
+2. Redis snapshot を取得。すでに同一 generation の snapshot load が進行中の場合は `[stats] Snapshot is loading. Try again shortly.` を表示し、待機 callback を積まない。
 3. public block のみ表示。
 
 ### 11.3 `/vstats staff`
@@ -1143,7 +1168,7 @@ LuckPerms 設定例:
 処理:
 
 1. `vstats.staff` を確認。
-2. Redis snapshot を取得。
+2. Redis snapshot を取得。すでに同一 generation の snapshot load が進行中の場合は `[stats] Snapshot is loading. Try again shortly.` を表示し、待機 callback を積まない。
 3. staff block のみ表示。staff node が存在しない場合も `staff: 0 players` と表示する。通常の `/vstats` では staff node が存在しない場合に `[Staff]` ブロックを省略する。
 
 ### 11.4 `/vstats servers`
@@ -1151,7 +1176,7 @@ LuckPerms 設定例:
 処理:
 
 1. `vstats.view` を確認。
-2. Redis snapshot を取得。
+2. Redis snapshot を取得。すでに同一 generation の snapshot load が進行中の場合は `[stats] Snapshot is loading. Try again shortly.` を表示し、待機 callback を積まない。
 3. servers block のみ表示。
 
 ### 11.5 `/vstats list`
@@ -1159,7 +1184,7 @@ LuckPerms 設定例:
 処理:
 
 1. `vstats.list` を確認。
-2. Redis snapshot を取得。
+2. Redis snapshot を取得。すでに同一 generation の snapshot load が進行中の場合は `[stats] Snapshot is loading. Try again shortly.` を表示し、待機 callback を積まない。
 3. 実行者が `vstats.staff` を持つ場合は public + staff の全プレイヤーを表示。
 4. 実行者が `vstats.staff` を持たない場合は public のプレイヤーのみ表示。
 

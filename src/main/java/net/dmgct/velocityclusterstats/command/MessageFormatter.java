@@ -195,6 +195,17 @@ public final class MessageFormatter {
      * @return formatted player list response
      */
     public Component formatPlayerListComponent(List<String> players) {
+        return formatPlayerListComponent(players, players.size());
+    }
+
+    /**
+     * Formats player names with an upper bound on displayed entries.
+     *
+     * @param players sorted player names
+     * @param limit maximum names to include in the response
+     * @return formatted player list response
+     */
+    public Component formatPlayerListComponent(List<String> players, int limit) {
         TextComponent.Builder builder = Component.text();
         if (players.isEmpty()) {
             append(builder, "There are ", LABEL);
@@ -205,7 +216,16 @@ public final class MessageFormatter {
         append(builder, "There are ", LABEL);
         append(builder, String.valueOf(players.size()), VALUE);
         append(builder, " player(s): ", LABEL);
-        append(builder, String.join(", ", players), NAME);
+        List<String> displayedPlayers = players.stream()
+                .limit(Math.max(0, limit))
+                .toList();
+        append(builder, String.join(", ", displayedPlayers), NAME);
+        int hiddenCount = players.size() - displayedPlayers.size();
+        if (hiddenCount > 0) {
+            append(builder, " ... +", LABEL);
+            append(builder, String.valueOf(hiddenCount), VALUE);
+            append(builder, " more", LABEL);
+        }
         return builder.build();
     }
 

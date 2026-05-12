@@ -76,6 +76,14 @@ class MessageFormatterTest {
     }
 
     @Test
+    void playerListCanLimitDisplayedNames() {
+        assertEquals(
+                "There are 4 player(s): alpha, Beta ... +2 more",
+                plainText.serialize(formatter.formatPlayerListComponent(List.of("alpha", "Beta", "delta", "gamma"), 2))
+        );
+    }
+
+    @Test
     void rootComponentUsesStableColorsWithoutChangingPlainText() {
         ClusterSnapshot snapshot = ClusterSnapshot.fromNodes(List.of(
                 new NodeSnapshot("prx01", PluginConfig.GROUP_PUBLIC, 1, List.of("aaa"), Map.of("lobby", 1), 1L),
