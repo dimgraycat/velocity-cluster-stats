@@ -11,10 +11,10 @@ Use the design document in `docs/` as implementation guidance, but do not implem
 Use Gradle Wrapper:
 
 ```sh
-JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew build
+./gradlew build
 ```
 
-The project targets Java 21 bytecode. In this workspace, Gradle should be run with JDK 21. Running Gradle with JDK 25 may fail before the build starts.
+The project targets Java 21 bytecode. Run Gradle with JDK 21. If multiple JDKs are installed, set `JAVA_HOME` to a local JDK 21 installation before running Gradle. Running Gradle with newer unsupported JDKs may fail before the build starts.
 
 ## Dependency Rules
 
@@ -43,7 +43,9 @@ The project targets Java 21 bytecode. In this workspace, Gradle should be run wi
 For build verification, run:
 
 ```sh
-JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 GRADLE_USER_HOME=/tmp/gradle-home ./gradlew --no-daemon build
+GRADLE_USER_HOME=/tmp/gradle-home ./gradlew --no-daemon build
 ```
+
+Ensure this command runs with JDK 21. If needed, set `JAVA_HOME` to a local JDK 21 installation.
 
 If dependency downloads are blocked by the sandbox, rerun the same command with approval for network access.

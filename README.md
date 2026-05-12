@@ -129,10 +129,10 @@ Keep Redis timeouts short. Redis is used only for stats storage; Redis failures 
 
 ## Build
 
-Use JDK 21.
+Use JDK 21. If multiple JDKs are installed, set `JAVA_HOME` to your local JDK 21 installation before running Gradle.
 
 ```sh
-JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew build
+./gradlew build
 ```
 
 The deployable jar is:
@@ -146,7 +146,7 @@ The `-thin.jar` artifact does not include runtime dependencies and is not the no
 ## Tests
 
 ```sh
-JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew test
+./gradlew test
 ```
 
 ## Release
